@@ -32,6 +32,7 @@ catkin_ws/src/klemol_planner/klemol_planner/vlm_yolo/vlm_module.py
 catkin_ws/src/klemol_planner/klemol_planner/vlm_yolo/grounding_module.py
 catkin_ws/src/klemol_planner/klemol_planner/vlm_yolo/yaw_estimator_adapter.py
 catkin_ws/src/klemol_planner/scripts/vlm_yolo_dynamic_demo.py
+catkin_ws/src/klemol_planner/models/best.pt
 catkin_ws/src/klemol_planner/models/yolov8n.pt
 external/YOLO_test/
 ```
@@ -77,7 +78,7 @@ rosrun klemol_planner vlm_yolo_dynamic_demo.py \
 
 - `--execute` moves the robot. Use the dry-run first.
 - The script still depends on the old ArUco-based `PandaTransformations.calibrate_camera()`, so all required ArUco markers must be visible.
-- The default YOLO weights path is `catkin_ws/src/klemol_planner/models/yolov8n.pt`. Pass `--weights path/to/best.pt` only when you want to override it.
+- The default YOLO weights path is `catkin_ws/src/klemol_planner/models/best.pt`. Pass `--weights path/to/model.pt` only when you want to override it.
 - The VLM planner expects Ollama to be running at `http://localhost:11434` by default.
 
 ## Single-object YOLO pick test
@@ -113,8 +114,10 @@ rosrun klemol_planner single_test.py \
 The scripts look for YOLO weights in this order:
 
 ```text
+ros1_vlm_yolo_integration/catkin_ws/src/klemol_planner/models/best.pt
 ros1_vlm_yolo_integration/catkin_ws/src/klemol_planner/models/yolov8n.pt
 /home/haochenhe/YOLO_test/runs/detect/three_objects/weights/best.pt
+ros1_vlm_yolo_integration/../YOLO_test/runs/detect/runs/detect/three_objects/weights/best.pt
 ros1_vlm_yolo_integration/external/YOLO_test/runs/detect/three_objects/weights/best.pt
 /home/haochenhe/YOLO_test/yolov8n.pt
 ros1_vlm_yolo_integration/external/YOLO_test/yolov8n.pt
