@@ -42,26 +42,14 @@ class CameraOperations:
         self.pipeline = None
 
         if self.USE_REALSENSE:
-            self.pipeline = rs.pipeline()
-            config = rs.config()
-            config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
-            config.enable_stream(rs.stream.color, 1920, 1080, rs.format.bgr8, 30)
-
-            self.pipeline.start(config)
-            align_to = rs.stream.color
-            self.align = rs.align(align_to)
-
-            profile = self.pipeline.get_active_profile()
-            color_stream = profile.get_stream(rs.stream.color).as_video_stream_profile()
-            intr = color_stream.get_intrinsics()
-            self.color_width = intr.width
-            self.color_height = intr.height
-            self.color_intrinsics = intr
-
-            self.camera_matrix = np.array([[intr.fx, 0, intr.ppx],
-                                           [0, intr.fy, intr.ppy],
-                                           [0, 0, 1]])
-            self.dist_coeffs = np.array(intr.coeffs)
+            try:
+                self._start_realsense_pipeline()
+            except RuntimeError as exc:
+                print(f"[WARN] RealSense pipeline failed to start: {exc}")
+                print("[WARN] Falling back to reference image/default intrinsics.")
+                self.USE_REALSENSE = False
+                self.pipeline = None
+                self._use_default_intrinsics()
 
         else:
             self._use_default_intrinsics()
@@ -101,10 +89,64 @@ class CameraOperations:
         #     width_favor_narrow_weight=0.01
         # )
 
+    def _start_realsense_pipeline(self):
+        """
+        Start RealSense with a supported color/depth profile.
+
+        Some cameras or USB ports do not support the old hard-coded request:
+        depth 640x480@30 + color 1920x1080@30. Try it first for compatibility,
+        then fall back to common profiles.
+        """
+        stream_profiles = [
+            (640, 480, 1920, 1080, 30),
+            (640, 480, 1280, 720, 30),
+            (640, 480, 640, 480, 30),
+            (848, 480, 848, 480, 30),
+            (424, 240, 424, 240, 30),
+        ]
+
+        last_error = None
+        for depth_width, depth_height, color_width, color_height, fps in stream_profiles:
+            pipeline = rs.pipeline()
+            config = rs.config()
+            config.enable_stream(rs.stream.depth, depth_width, depth_height, rs.format.z16, fps)
+            config.enable_stream(rs.stream.color, color_width, color_height, rs.format.bgr8, fps)
+            try:
+                pipeline.start(config)
+            except RuntimeError as exc:
+                last_error = exc
+                continue
+
+            self.pipeline = pipeline
+            self.align = rs.align(rs.stream.color)
+
+            profile = self.pipeline.get_active_profile()
+            color_stream = profile.get_stream(rs.stream.color).as_video_stream_profile()
+            intr = color_stream.get_intrinsics()
+            self.color_width = intr.width
+            self.color_height = intr.height
+            self.color_intrinsics = intr
+
+            self.camera_matrix = np.array([[intr.fx, 0, intr.ppx],
+                                           [0, intr.fy, intr.ppy],
+                                           [0, 0, 1]])
+            self.dist_coeffs = np.array(intr.coeffs)
+            print(
+                "[INFO] RealSense started: "
+                f"depth={depth_width}x{depth_height}@{fps}, "
+                f"color={color_width}x{color_height}@{fps}"
+            )
+            return
+
+        raise RuntimeError(f"No supported RealSense stream profile found. Last error: {last_error}")
+
     def _use_default_intrinsics(self):
         """
         Use default intrinsics for D435i @ 1920x1080.
         """
+        self.color_width = 1920
+        self.color_height = 1080
+        self.color_intrinsics = None
         self.camera_matrix = np.array([
             [1380.0, 0, 960.0],
             [0, 1380.0, 540.0],
