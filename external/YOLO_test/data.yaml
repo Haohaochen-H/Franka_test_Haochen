@@ -1,0 +1,9 @@
+path: dataset
+train: images/train
+val: images/val
+test: images/test
+
+names:
+  0: Cleaner_bottle
+  1: Salt_box
+  2: tomato_soup_can
