@@ -32,6 +32,7 @@ catkin_ws/src/klemol_planner/klemol_planner/vlm_yolo/vlm_module.py
 catkin_ws/src/klemol_planner/klemol_planner/vlm_yolo/grounding_module.py
 catkin_ws/src/klemol_planner/klemol_planner/vlm_yolo/yaw_estimator_adapter.py
 catkin_ws/src/klemol_planner/scripts/vlm_yolo_dynamic_demo.py
+catkin_ws/src/klemol_planner/models/yolov8n.pt
 external/YOLO_test/
 ```
 
@@ -76,7 +77,7 @@ rosrun klemol_planner vlm_yolo_dynamic_demo.py \
 
 - `--execute` moves the robot. Use the dry-run first.
 - The script still depends on the old ArUco-based `PandaTransformations.calibrate_camera()`, so all required ArUco markers must be visible.
-- The default YOLO weights path is `external/YOLO_test/yolov8n.pt`. Pass `--weights path/to/best.pt` when the trained weights are available.
+- The default YOLO weights path is `catkin_ws/src/klemol_planner/models/yolov8n.pt`. Pass `--weights path/to/best.pt` only when you want to override it.
 - The VLM planner expects Ollama to be running at `http://localhost:11434` by default.
 
 ## Single-object YOLO pick test
@@ -87,8 +88,7 @@ Dry-run:
 
 ```bash
 rosrun klemol_planner single_test.py \
-  --class-name Cleaner_bottle \
-  --weights /path/to/best.pt
+  --class-name Cleaner_bottle
 ```
 
 Execute the pick-and-place-back after checking the printed base-frame point:
@@ -96,7 +96,6 @@ Execute the pick-and-place-back after checking the printed base-frame point:
 ```bash
 rosrun klemol_planner single_test.py \
   --class-name Cleaner_bottle \
-  --weights /path/to/best.pt \
   --execute
 ```
 
@@ -107,7 +106,18 @@ To only pick and lift without placing the object back:
 ```bash
 rosrun klemol_planner single_test.py \
   --class-name Cleaner_bottle \
-  --weights /path/to/best.pt \
   --execute \
   --skip-place
 ```
+
+The scripts look for YOLO weights in this order:
+
+```text
+ros1_vlm_yolo_integration/catkin_ws/src/klemol_planner/models/yolov8n.pt
+/home/haochenhe/YOLO_test/runs/detect/three_objects/weights/best.pt
+ros1_vlm_yolo_integration/external/YOLO_test/runs/detect/three_objects/weights/best.pt
+/home/haochenhe/YOLO_test/yolov8n.pt
+ros1_vlm_yolo_integration/external/YOLO_test/yolov8n.pt
+```
+
+Use `--weights /path/to/model.pt` only when you want to override the default.
