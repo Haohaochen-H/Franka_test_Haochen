@@ -6,6 +6,10 @@ __pycache__/
 *.pt
 *.torchscript
 
+# Keep the small YOLO weights required by single_test.py inside the copied demo.
+!catkin_ws/src/klemol_planner/models/
+!catkin_ws/src/klemol_planner/models/*.pt
+
 # Ignore log files
 *.log
 
