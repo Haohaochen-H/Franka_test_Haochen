@@ -61,6 +61,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-place", action="store_true", help="Only pick and lift; do not place the object back.")
     parser.add_argument("--planner", default="rrt_with_connecting", choices=["rrt_with_connecting"])
     parser.add_argument("--post-processing", default="quintic_polynomial", choices=["quintic_polynomial"])
+    parser.add_argument(
+        "--calibration",
+        default="fixed",
+        choices=["fixed", "aruco"],
+        help="Use fixed camera-to-base calibration by default, or recompute it from ArUco markers.",
+    )
     parser.add_argument("--approach-height", type=float, default=0.12, help="Vertical approach offset in meters.")
     parser.add_argument("--grasp-height-offset", type=float, default=0.02, help="Offset above detected object for grasp.")
     parser.add_argument(
@@ -180,7 +186,10 @@ def main() -> None:
 
     camera_operations = CameraOperations()
     panda_transformations = PandaTransformations(cam_operations=camera_operations)
-    panda_transformations.calibrate_camera()
+    if args.calibration == "fixed":
+        panda_transformations.use_fixed_camera_calibration()
+    else:
+        panda_transformations.calibrate_camera()
 
     color_image, depth_frame = camera_operations.get_image()
     intrinsics = getattr(camera_operations, "color_intrinsics", None)

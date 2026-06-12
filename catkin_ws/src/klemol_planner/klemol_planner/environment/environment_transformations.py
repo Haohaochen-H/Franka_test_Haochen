@@ -48,6 +48,25 @@ class PandaTransformations:
         # Transformation from camera to object frame will be updated based on object pose
         self.T_camera_to_object = np.eye(4)
 
+    def use_fixed_camera_calibration(self) -> None:
+        """
+        Use the best measured camera-to-base calibration instead of recalibrating from ArUco depth.
+
+        Captured from a stable dry-run on 2026-06-13:
+        Final T_base_to_camera =
+        [[-0.0004, 1.0000, 0.0000, 0.3616],
+         [ 1.0000, 0.0004, 0.0000, 0.0653],
+         [ 0.0000, 0.0000,-1.0000, 1.4003],
+         [ 0.0000, 0.0000, 0.0000, 1.0000]]
+        """
+        self.T_base_to_camera = np.array([
+            [-0.0004, 1.0000, 0.0000, 0.3616],
+            [ 1.0000, 0.0004, 0.0000, 0.0653],
+            [ 0.0000, 0.0000,-1.0000, 1.4003],
+            [ 0.0000, 0.0000, 0.0000, 1.0000],
+        ])
+        print(f"[INFO] Using fixed T_base_to_camera:\n{np.round(self.T_base_to_camera, 4)}")
+
     def calibrate_corners_relative_to_base(self) -> None:
         """
         Calibrate the corners relative to the base frame.
