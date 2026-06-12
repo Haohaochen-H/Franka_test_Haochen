@@ -6,6 +6,8 @@ from pathlib import Path
 import sys
 from typing import List
 
+import cv2
+import numpy as np
 import rospy
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
@@ -54,6 +56,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--post-processing", default="quintic_polynomial", choices=["quintic_polynomial"])
     parser.add_argument("--approach-height", type=float, default=0.12, help="Vertical approach offset in meters.")
     parser.add_argument("--grasp-height-offset", type=float, default=0.02, help="Offset above detected object for grasp.")
+    parser.add_argument(
+        "--debug-image",
+        default="/tmp/single_test_yolo_debug.png",
+        help="Path for the annotated YOLO debug image. Use an empty string to disable saving.",
+    )
+    parser.add_argument("--show-image", action="store_true", help="Show the annotated YOLO image in an OpenCV window.")
     return parser.parse_args()
 
 
@@ -99,6 +107,62 @@ def normalize_name(name: str) -> str:
     return str(name).strip().lower().replace(" ", "_").replace("-", "_")
 
 
+def depth_at(depth_frame, x: int, y: int):
+    if depth_frame is None:
+        return None
+    if hasattr(depth_frame, "get_distance"):
+        return float(depth_frame.get_distance(x, y))
+
+    depth_array = np.asarray(depth_frame)
+    height, width = depth_array.shape[:2]
+    if not (0 <= x < width and 0 <= y < height):
+        return None
+    depth = float(depth_array[y, x])
+    if depth > 20.0:
+        depth *= 0.001
+    return depth
+
+
+def write_debug_image(
+    color_image,
+    depth_frame,
+    detections: List[YoloDetection],
+    selected: YoloDetection,
+    output_path: str,
+    show_image: bool,
+) -> None:
+    if not output_path and not show_image:
+        return
+
+    image = color_image.copy()
+    for detection in detections:
+        x1, y1, x2, y2 = detection.bbox_xyxy
+        cx = int(round((x1 + x2) * 0.5))
+        cy = int(round((y1 + y2) * 0.5))
+        depth = depth_at(depth_frame, cx, cy)
+        is_selected = detection.object_id == selected.object_id
+        color = (0, 255, 0) if is_selected else (255, 180, 0)
+
+        cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
+        cv2.circle(image, (cx, cy), 5, (0, 0, 255), -1)
+        label = f"{detection.object_id} {detection.confidence:.2f}"
+        depth_label = "depth=None" if depth is None else f"depth={depth:.3f}m"
+        cv2.putText(image, label, (x1, max(20, y1 - 24)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
+        cv2.putText(image, depth_label, (x1, max(20, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
+        cv2.putText(image, f"center=({cx},{cy})", (cx + 8, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 1)
+
+    if output_path:
+        output = Path(output_path).expanduser()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(output), image)
+        print(f"[SINGLE_TEST] debug_image={output}")
+
+    if show_image:
+        cv2.imshow("single_test YOLO debug", image)
+        cv2.waitKey(0)
+        cv2.destroyWindow("single_test YOLO debug")
+
+
 def main() -> None:
     args = parse_args()
     rospy.init_node("single_test", anonymous=True)
@@ -115,6 +179,14 @@ def main() -> None:
     print_detections(detections)
 
     selected = choose_detection(detections, args.class_name)
+    write_debug_image(
+        color_image=color_image,
+        depth_frame=depth_frame,
+        detections=detections,
+        selected=selected,
+        output_path=args.debug_image,
+        show_image=args.show_image,
+    )
     object_point_base = detection_to_base_point(selected, panda_transformations)
     print(f"[SINGLE_TEST] selected={selected.object_id} class={selected.class_name} conf={selected.confidence:.3f}")
     print(f"[SINGLE_TEST] base_point={object_point_base}")
