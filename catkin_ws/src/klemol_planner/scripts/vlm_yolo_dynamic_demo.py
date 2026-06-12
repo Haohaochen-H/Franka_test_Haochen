@@ -112,6 +112,17 @@ class RRTGroundedExecutor:
         lift.z += approach_height
         self._move_to_pose_sequence(goal=lift)
 
+    def execute_hover(
+        self,
+        object_id: str,
+        object_point: PointWithOrientation,
+        hover_height: float,
+    ) -> None:
+        rospy.loginfo(f"[VLM-YOLO] hovering {hover_height:.3f} m above {object_id} at {object_point}")
+        hover = copy.deepcopy(object_point)
+        hover.z += hover_height
+        self._move_to_pose_sequence(goal=hover)
+
     def execute_place(
         self,
         object_id: str,

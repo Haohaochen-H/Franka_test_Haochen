@@ -52,6 +52,12 @@ def parse_args() -> argparse.Namespace:
         help="Optional object class/object_id to pick. If omitted, picks the highest-confidence detection.",
     )
     parser.add_argument("--execute", action="store_true", help="Actually move the robot and close the gripper.")
+    parser.add_argument(
+        "--hover-only",
+        action="store_true",
+        help="With --execute, only move to a point above the detected object; do not pick or place.",
+    )
+    parser.add_argument("--hover-height", type=float, default=0.10, help="Height above the detected object for --hover-only.")
     parser.add_argument("--skip-place", action="store_true", help="Only pick and lift; do not place the object back.")
     parser.add_argument("--planner", default="rrt_with_connecting", choices=["rrt_with_connecting"])
     parser.add_argument("--post-processing", default="quintic_polynomial", choices=["quintic_polynomial"])
@@ -201,6 +207,15 @@ def main() -> None:
         return
 
     executor = RRTGroundedExecutor(args.planner, args.post_processing)
+    if args.hover_only:
+        executor.execute_hover(
+            object_id=selected.object_id,
+            object_point=object_point_base,
+            hover_height=args.hover_height,
+        )
+        print(f"[SINGLE_TEST] hover-only finished at {args.hover_height:.3f} m above {selected.object_id}")
+        return
+
     executor.execute_pick(
         object_id=selected.object_id,
         object_point=object_point_base,
