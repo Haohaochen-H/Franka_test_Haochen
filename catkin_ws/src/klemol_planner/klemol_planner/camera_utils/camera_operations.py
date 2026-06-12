@@ -256,11 +256,14 @@ class CameraOperations:
             cy = int(corner[0][:, 1].mean())
 
             if self.USE_REALSENSE:
-                z_depth = median_depth_around_pixel(depth_frame, cx, cy, radius=8)
+                z_depth = median_depth_around_pixel(depth_frame, cx, cy, radius=15)
                 if z_depth is None:
-                    print(f"[WARN] No valid depth around marker {marker_id} center ({cx}, {cy}); skipping marker.")
-                    continue
-                print(f"[DEBUG] Depth around ({cx}, {cy}): {z_depth:.3f} m")
+                    print(
+                        f"[WARN] No valid depth around marker {marker_id} center ({cx}, {cy}); "
+                        "using solvePnP depth fallback."
+                    )
+                else:
+                    print(f"[DEBUG] Depth around ({cx}, {cy}): {z_depth:.3f} m")
             else:
                 z_depth = 1.2  # fallback
 
@@ -268,7 +271,11 @@ class CameraOperations:
             rvec, tvec = self.estimate_pose_single_marker(
                 corner, self.marker_length, self.camera_matrix, self.dist_coeffs, z_override=z_depth
             )
-            tvec[2][0] = z_depth  # enforce correct Z
+            if z_depth is not None:
+                tvec[2][0] = z_depth  # enforce correct Z
+            else:
+                z_depth = float(tvec[2][0])
+                print(f"[WARN] marker {marker_id} solvePnP fallback depth: {z_depth:.3f} m")
 
             detected_markers.append((marker_id, tvec.flatten(), rvec.flatten()))
 
