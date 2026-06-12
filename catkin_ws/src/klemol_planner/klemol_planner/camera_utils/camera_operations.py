@@ -33,6 +33,35 @@ def convert_depth_to_phys_coord_using_realsense_intrinsics(x, y, depth, intrinsi
         return 0.0, 0.0, 0.0
 
 
+def median_depth_around_pixel(depth_frame, x, y, radius=8):
+    depths = []
+    if hasattr(depth_frame, "get_distance"):
+        for yy in range(y - radius, y + radius + 1):
+            for xx in range(x - radius, x + radius + 1):
+                try:
+                    depth = float(depth_frame.get_distance(xx, yy))
+                except RuntimeError:
+                    continue
+                if 0.05 < depth < 5.0:
+                    depths.append(depth)
+    else:
+        depth_array = np.asarray(depth_frame)
+        height, width = depth_array.shape[:2]
+        x1 = max(0, x - radius)
+        x2 = min(width, x + radius + 1)
+        y1 = max(0, y - radius)
+        y2 = min(height, y + radius + 1)
+        patch = depth_array[y1:y2, x1:x2].astype(float)
+        if patch.size:
+            if np.nanmax(patch) > 20.0:
+                patch *= 0.001
+            depths = patch[(patch > 0.05) & (patch < 5.0)].tolist()
+
+    if not depths:
+        return None
+    return float(np.median(depths))
+
+
 class CameraOperations:
     def __init__(self):
         """
@@ -227,12 +256,11 @@ class CameraOperations:
             cy = int(corner[0][:, 1].mean())
 
             if self.USE_REALSENSE:
-                if hasattr(depth_frame, 'get_distance'):
-                    z_depth = depth_frame.get_distance(cx, cy)
-                    print(f"[DEBUG] Depth at ({cx}, {cy}): {z_depth:.3f} m")
-                else:
-                    print("[ERROR] depth_frame is not a RealSense frame! It is type:", type(depth_frame))
-                    z_depth = 0.0
+                z_depth = median_depth_around_pixel(depth_frame, cx, cy, radius=8)
+                if z_depth is None:
+                    print(f"[WARN] No valid depth around marker {marker_id} center ({cx}, {cy}); skipping marker.")
+                    continue
+                print(f"[DEBUG] Depth around ({cx}, {cy}): {z_depth:.3f} m")
             else:
                 z_depth = 1.2  # fallback
 
