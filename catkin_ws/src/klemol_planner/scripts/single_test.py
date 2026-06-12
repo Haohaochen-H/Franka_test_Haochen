@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 from pathlib import Path
 import sys
 from typing import List
@@ -58,8 +59,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--grasp-height-offset", type=float, default=0.02, help="Offset above detected object for grasp.")
     parser.add_argument(
         "--debug-image",
-        default="/tmp/single_test_yolo_debug.png",
-        help="Path for the annotated YOLO debug image. Use an empty string to disable saving.",
+        default="auto",
+        help="Path for the annotated YOLO debug image. Use 'auto' for a timestamped debug_images file or an empty string to disable saving.",
     )
     parser.add_argument("--show-image", action="store_true", help="Show the annotated YOLO image in an OpenCV window.")
     return parser.parse_args()
@@ -152,7 +153,11 @@ def write_debug_image(
         cv2.putText(image, f"center=({cx},{cy})", (cx + 8, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 1)
 
     if output_path:
-        output = Path(output_path).expanduser()
+        if output_path == "auto":
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            output = PACKAGE_ROOT / "debug_images" / f"single_test_yolo_debug_{timestamp}.png"
+        else:
+            output = Path(output_path).expanduser()
         output.parent.mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(output), image)
         print(f"[SINGLE_TEST] debug_image={output}")
