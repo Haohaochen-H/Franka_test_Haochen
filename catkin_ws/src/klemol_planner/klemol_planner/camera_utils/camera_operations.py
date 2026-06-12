@@ -246,7 +246,8 @@ class CameraOperations:
             print("[DEBUG] No ArUco markers detected.")
             return []
 
-        detected_markers = []
+        marker_observations = []
+        valid_depths = []
 
         for i, corner in enumerate(corners):
             marker_id = int(ids[i][0])
@@ -267,22 +268,46 @@ class CameraOperations:
             else:
                 z_depth = 1.2  # fallback
 
+            if z_depth is not None:
+                valid_depths.append(z_depth)
+            marker_observations.append((marker_id, corner, cx, cy, z_depth))
+
+        reference_depth = float(np.median(valid_depths)) if valid_depths else None
+        depth_outlier_threshold = 0.20
+        detected_markers = []
+
+        for marker_id, corner, cx, cy, z_depth in marker_observations:
+            corrected_depth = z_depth
+            if reference_depth is not None:
+                if corrected_depth is None:
+                    corrected_depth = reference_depth
+                    print(
+                        f"[WARN] marker {marker_id} has no valid RealSense depth; "
+                        f"using marker-depth median {corrected_depth:.3f} m."
+                    )
+                elif abs(corrected_depth - reference_depth) > depth_outlier_threshold:
+                    print(
+                        f"[WARN] marker {marker_id} depth {corrected_depth:.3f} m is an outlier "
+                        f"from median {reference_depth:.3f} m; using median."
+                    )
+                    corrected_depth = reference_depth
+
             # Estimate pose
             rvec, tvec = self.estimate_pose_single_marker(
-                corner, self.marker_length, self.camera_matrix, self.dist_coeffs, z_override=z_depth
+                corner, self.marker_length, self.camera_matrix, self.dist_coeffs, z_override=corrected_depth
             )
-            if z_depth is not None:
-                tvec[2][0] = z_depth  # enforce correct Z
+            if corrected_depth is not None:
+                tvec[2][0] = corrected_depth  # enforce correct Z
             else:
-                z_depth = float(tvec[2][0])
-                print(f"[WARN] marker {marker_id} solvePnP fallback depth: {z_depth:.3f} m")
+                corrected_depth = float(tvec[2][0])
+                print(f"[WARN] marker {marker_id} solvePnP fallback depth: {corrected_depth:.3f} m")
 
             detected_markers.append((marker_id, tvec.flatten(), rvec.flatten()))
 
             # Visualization
             cv2.drawFrameAxes(color_image, self.camera_matrix, self.dist_coeffs, rvec, tvec, 0.1)
             cv2.putText(color_image, f"ID: {marker_id}", (cx, cy), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-            cv2.putText(color_image, f"Z: {z_depth:.2f} m", (cx, cy + 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+            cv2.putText(color_image, f"Z: {corrected_depth:.2f} m", (cx, cy + 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
 
             if marker_id == 10:
                 cv2.putText(color_image, "Box 1", (cx, cy + 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
