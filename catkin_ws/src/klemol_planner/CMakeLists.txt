@@ -20,6 +20,7 @@ include_directories(
 
 # Install scripts (ROS executables)
 catkin_install_python(PROGRAMS
+  scripts/aruco_corner_debug.py
   scripts/demo_planner_node.py
   scripts/move_franka_klemol_based_on_camera.py
   scripts/single_test.py
