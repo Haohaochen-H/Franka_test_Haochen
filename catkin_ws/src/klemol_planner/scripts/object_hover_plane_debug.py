@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import math
 from pathlib import Path
 import sys
 
@@ -122,8 +121,7 @@ def main() -> None:
     if args.yaw_source == "yolo":
         if selected.yaw_rad is None:
             raise RuntimeError("YOLO yaw is None. Use --yaw-source transform/fixed or check yaw estimation.")
-        # Image +u maps approximately to base +y, and image +v maps approximately to base +x.
-        target_yaw = (math.pi * 0.5) - selected.yaw_rad + args.yaw_offset
+        target_yaw = selected.yaw_rad + args.yaw_offset
     elif args.yaw_source == "fixed":
         target_yaw = args.fixed_yaw + args.yaw_offset
     else:
