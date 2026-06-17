@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 from pathlib import Path
 import sys
 
@@ -54,6 +55,19 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Target height above the table plane. Internally adds the measured table offset 0.20 m.",
     )
+    parser.add_argument(
+        "--yaw-source",
+        default="yolo",
+        choices=["yolo", "transform", "fixed"],
+        help="Use YOLO image yaw converted to base yaw, transformed object yaw, or a fixed yaw.",
+    )
+    parser.add_argument("--fixed-yaw", type=float, default=0.0, help="Fixed target yaw in radians when --yaw-source fixed.")
+    parser.add_argument(
+        "--yaw-offset",
+        type=float,
+        default=0.0,
+        help="Extra yaw offset in radians. Use about 1.5708 to rotate gripper 90 degrees from object yaw.",
+    )
     parser.add_argument("--debug-image", default="auto", help="Annotated YOLO image path, 'auto', or empty string.")
     parser.add_argument("--show-image", action="store_true", help="Show annotated YOLO image in an OpenCV window.")
     return parser.parse_args()
@@ -105,6 +119,15 @@ def main() -> None:
     else:
         relative_table_z = args.table_z
     target_z = TABLE_Z_BASE_OFFSET + relative_table_z
+    if args.yaw_source == "yolo":
+        if selected.yaw_rad is None:
+            raise RuntimeError("YOLO yaw is None. Use --yaw-source transform/fixed or check yaw estimation.")
+        # Image +u maps approximately to base +y, and image +v maps approximately to base +x.
+        target_yaw = (math.pi * 0.5) - selected.yaw_rad + args.yaw_offset
+    elif args.yaw_source == "fixed":
+        target_yaw = args.fixed_yaw + args.yaw_offset
+    else:
+        target_yaw = object_base.yaw + args.yaw_offset
 
     target_pose = PointWithOrientation(
         x=target_x,
@@ -112,13 +135,15 @@ def main() -> None:
         z=target_z,
         roll=object_base.roll,
         pitch=object_base.pitch,
-        yaw=object_base.yaw,
+        yaw=target_yaw,
     )
 
     print(f"[HOVER_PLANE_DEBUG] selected={selected.object_id} class={selected.class_name} conf={selected.confidence:.3f}")
     print(f"[HOVER_PLANE_DEBUG] center_pixel={selected.center_pixel} center_depth_m={selected.center_depth_m}")
+    print(f"[HOVER_PLANE_DEBUG] yolo_yaw={selected.yaw_rad} object_base_yaw={object_base.yaw}")
     print(f"[HOVER_PLANE_DEBUG] object_base={object_base}")
     print(f"[HOVER_PLANE_DEBUG] xy_source={args.xy_source} target_xy=({target_x:.4f}, {target_y:.4f})")
+    print(f"[HOVER_PLANE_DEBUG] yaw_source={args.yaw_source} yaw_offset={args.yaw_offset:.4f} target_yaw={target_yaw:.4f}")
     print(
         f"[HOVER_PLANE_DEBUG] target_z={target_z:.4f} "
         f"from table_offset={TABLE_Z_BASE_OFFSET:.4f} + relative_table_z={relative_table_z:.4f}"
