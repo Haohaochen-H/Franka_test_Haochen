@@ -24,6 +24,9 @@ from single_test import choose_detection, default_weights_path, detection_to_bas
 from vlm_yolo_dynamic_demo import RRTGroundedExecutor
 
 
+TABLE_Z_BASE_OFFSET = 0.20
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Move the robot above the detected object's XY at a fixed height above the table plane."
@@ -49,7 +52,7 @@ def parse_args() -> argparse.Namespace:
         "--table-z",
         type=float,
         default=None,
-        help="Direct target z in base frame. Defaults to old table height plus 0.50 m.",
+        help="Target height above the table plane. Internally adds the measured table offset 0.20 m.",
     )
     parser.add_argument("--debug-image", default="auto", help="Annotated YOLO image path, 'auto', or empty string.")
     parser.add_argument("--show-image", action="store_true", help="Show annotated YOLO image in an OpenCV window.")
@@ -98,11 +101,10 @@ def main() -> None:
         target_x, target_y = object_base.x, object_base.y
 
     if args.table_z is None:
-        table_height = float(sum(point[2] for point in transformer.table_corners_translations.values()) / 4.0)
-        target_z = table_height + 0.50
+        relative_table_z = 0.50
     else:
-        table_height = None
-        target_z = args.table_z
+        relative_table_z = args.table_z
+    target_z = TABLE_Z_BASE_OFFSET + relative_table_z
 
     target_pose = PointWithOrientation(
         x=target_x,
@@ -117,10 +119,10 @@ def main() -> None:
     print(f"[HOVER_PLANE_DEBUG] center_pixel={selected.center_pixel} center_depth_m={selected.center_depth_m}")
     print(f"[HOVER_PLANE_DEBUG] object_base={object_base}")
     print(f"[HOVER_PLANE_DEBUG] xy_source={args.xy_source} target_xy=({target_x:.4f}, {target_y:.4f})")
-    if table_height is None:
-        print(f"[HOVER_PLANE_DEBUG] target_z={target_z:.4f} from --table-z")
-    else:
-        print(f"[HOVER_PLANE_DEBUG] target_z={target_z:.4f} from default table_height={table_height:.4f} + 0.5000")
+    print(
+        f"[HOVER_PLANE_DEBUG] target_z={target_z:.4f} "
+        f"from table_offset={TABLE_Z_BASE_OFFSET:.4f} + relative_table_z={relative_table_z:.4f}"
+    )
     print(f"[HOVER_PLANE_DEBUG] target_pose={target_pose}")
 
     executor = RRTGroundedExecutor(args.planner, args.post_processing)
