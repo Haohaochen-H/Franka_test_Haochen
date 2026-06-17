@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 from pathlib import Path
 import sys
 
@@ -64,7 +65,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--yaw-offset",
         type=float,
-        default=0.0,
+        default=math.pi * 0.5,
         help="Extra yaw offset in radians. Use about 1.5708 to rotate gripper 90 degrees from object yaw.",
     )
     parser.add_argument("--debug-image", default="auto", help="Annotated YOLO image path, 'auto', or empty string.")
