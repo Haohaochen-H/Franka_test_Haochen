@@ -45,8 +45,12 @@ def parse_args() -> argparse.Namespace:
         choices=["pixel", "transform"],
         help="Use fixed pixel->base XY homography or camera->base transform for target XY.",
     )
-    parser.add_argument("--table-z", type=float, default=None, help="Table plane z in base frame. Defaults to old corner average.")
-    parser.add_argument("--height-above-table", type=float, default=0.50, help="Target height above the table plane in meters.")
+    parser.add_argument(
+        "--table-z",
+        type=float,
+        default=None,
+        help="Direct target z in base frame. Defaults to old table height plus 0.50 m.",
+    )
     parser.add_argument("--debug-image", default="auto", help="Annotated YOLO image path, 'auto', or empty string.")
     parser.add_argument("--show-image", action="store_true", help="Show annotated YOLO image in an OpenCV window.")
     return parser.parse_args()
@@ -93,10 +97,12 @@ def main() -> None:
     else:
         target_x, target_y = object_base.x, object_base.y
 
-    table_z = args.table_z
-    if table_z is None:
-        table_z = float(sum(point[2] for point in transformer.table_corners_translations.values()) / 4.0)
-    target_z = table_z + args.height_above_table
+    if args.table_z is None:
+        table_height = float(sum(point[2] for point in transformer.table_corners_translations.values()) / 4.0)
+        target_z = table_height + 0.50
+    else:
+        table_height = None
+        target_z = args.table_z
 
     target_pose = PointWithOrientation(
         x=target_x,
@@ -111,7 +117,10 @@ def main() -> None:
     print(f"[HOVER_PLANE_DEBUG] center_pixel={selected.center_pixel} center_depth_m={selected.center_depth_m}")
     print(f"[HOVER_PLANE_DEBUG] object_base={object_base}")
     print(f"[HOVER_PLANE_DEBUG] xy_source={args.xy_source} target_xy=({target_x:.4f}, {target_y:.4f})")
-    print(f"[HOVER_PLANE_DEBUG] table_z={table_z:.4f} height_above_table={args.height_above_table:.4f}")
+    if table_height is None:
+        print(f"[HOVER_PLANE_DEBUG] target_z={target_z:.4f} from --table-z")
+    else:
+        print(f"[HOVER_PLANE_DEBUG] target_z={target_z:.4f} from default table_height={table_height:.4f} + 0.5000")
     print(f"[HOVER_PLANE_DEBUG] target_pose={target_pose}")
 
     executor = RRTGroundedExecutor(args.planner, args.post_processing)
