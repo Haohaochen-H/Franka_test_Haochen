@@ -18,6 +18,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from klemol_planner.camera_utils.camera_operations import CameraOperations
 from klemol_planner.environment.environment_transformations import PandaTransformations
 from klemol_planner.goals.point_with_orientation import PointWithOrientation
+from klemol_planner.vlm_yolo.pixel_xy_transform import pixel_to_base_xy
 from klemol_planner.vlm_yolo.yolo_module import YoloObjectDetector, print_detections
 from single_test import choose_detection, default_weights_path, detection_to_base_point, write_debug_image
 from vlm_yolo_dynamic_demo import RRTGroundedExecutor
@@ -38,6 +39,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--planner", default="rrt_with_connecting", choices=["rrt_with_connecting"])
     parser.add_argument("--post-processing", default="quintic_polynomial", choices=["quintic_polynomial"])
+    parser.add_argument(
+        "--xy-source",
+        default="pixel",
+        choices=["pixel", "transform"],
+        help="Use fixed pixel->base XY homography or camera->base transform for target XY.",
+    )
     parser.add_argument("--table-z", type=float, default=None, help="Table plane z in base frame. Defaults to old corner average.")
     parser.add_argument("--height-above-table", type=float, default=0.50, help="Target height above the table plane in meters.")
     parser.add_argument("--debug-image", default="auto", help="Annotated YOLO image path, 'auto', or empty string.")
@@ -79,14 +86,21 @@ def main() -> None:
     )
 
     object_base = detection_to_base_point(selected, transformer)
+    if args.xy_source == "pixel":
+        if selected.center_pixel is None:
+            raise RuntimeError("Selected object has no center pixel for pixel XY transform.")
+        target_x, target_y = pixel_to_base_xy(selected.center_pixel)
+    else:
+        target_x, target_y = object_base.x, object_base.y
+
     table_z = args.table_z
     if table_z is None:
         table_z = float(sum(point[2] for point in transformer.table_corners_translations.values()) / 4.0)
     target_z = table_z + args.height_above_table
 
     target_pose = PointWithOrientation(
-        x=object_base.x,
-        y=object_base.y,
+        x=target_x,
+        y=target_y,
         z=target_z,
         roll=object_base.roll,
         pitch=object_base.pitch,
@@ -94,7 +108,9 @@ def main() -> None:
     )
 
     print(f"[HOVER_PLANE_DEBUG] selected={selected.object_id} class={selected.class_name} conf={selected.confidence:.3f}")
+    print(f"[HOVER_PLANE_DEBUG] center_pixel={selected.center_pixel} center_depth_m={selected.center_depth_m}")
     print(f"[HOVER_PLANE_DEBUG] object_base={object_base}")
+    print(f"[HOVER_PLANE_DEBUG] xy_source={args.xy_source} target_xy=({target_x:.4f}, {target_y:.4f})")
     print(f"[HOVER_PLANE_DEBUG] table_z={table_z:.4f} height_above_table={args.height_above_table:.4f}")
     print(f"[HOVER_PLANE_DEBUG] target_pose={target_pose}")
 

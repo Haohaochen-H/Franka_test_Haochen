@@ -19,6 +19,7 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from klemol_planner.camera_utils.camera_operations import CameraOperations
 from klemol_planner.environment.environment_transformations import PandaTransformations
+from klemol_planner.vlm_yolo.pixel_xy_transform import PIXEL_TO_BASE_XY_H, pixel_to_base_xy
 from klemol_planner.vlm_yolo.yolo_module import YoloObjectDetector, print_detections
 from single_test import choose_detection, default_weights_path, detection_to_base_point, write_debug_image
 
@@ -88,11 +89,13 @@ def main() -> None:
     )
 
     object_base = detection_to_base_point(selected, transformer)
+    pixel_base_xy = pixel_to_base_xy(selected.center_pixel) if selected.center_pixel else None
     transform_matrix = np.asarray(transformer.T_base_to_camera, dtype=float)
     report = {
         "timestamp": timestamp,
         "calibration": args.calibration,
         "transform_camera_to_base": transform_matrix.tolist(),
+        "pixel_to_base_xy_homography": PIXEL_TO_BASE_XY_H.tolist(),
         "selected_object": {
             "object_id": selected.object_id,
             "class_name": selected.class_name,
@@ -102,6 +105,7 @@ def main() -> None:
             "center_depth_m": selected.center_depth_m,
             "position_camera": list(selected.position_camera) if selected.position_camera else None,
             "position_base": point_to_dict(object_base),
+            "pixel_homography_base_xy": list(pixel_base_xy) if pixel_base_xy else None,
             "yaw_rad": selected.yaw_rad,
         },
         "debug_image": str(image_path),
@@ -114,6 +118,8 @@ def main() -> None:
     print(f"[PERCEPTION_DEBUG] center_pixel={selected.center_pixel} center_depth_m={selected.center_depth_m}")
     print(f"[PERCEPTION_DEBUG] position_camera={selected.position_camera}")
     print(f"[PERCEPTION_DEBUG] position_base={object_base}")
+    print(f"[PERCEPTION_DEBUG] pixel_to_base_xy_homography=\n{np.round(PIXEL_TO_BASE_XY_H, 8)}")
+    print(f"[PERCEPTION_DEBUG] pixel_homography_base_xy={pixel_base_xy}")
     print(f"[PERCEPTION_DEBUG] debug_image={image_path}")
     print(f"[PERCEPTION_DEBUG] report={report_path}")
 
