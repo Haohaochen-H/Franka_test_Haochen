@@ -23,6 +23,8 @@ catkin_install_python(PROGRAMS
   scripts/aruco_corner_debug.py
   scripts/demo_planner_node.py
   scripts/move_franka_klemol_based_on_camera.py
+  scripts/object_hover_plane_debug.py
+  scripts/object_perception_debug.py
   scripts/single_test.py
   scripts/vlm_yolo_dynamic_demo.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}

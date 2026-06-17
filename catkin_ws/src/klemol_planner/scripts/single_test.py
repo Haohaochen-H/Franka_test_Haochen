@@ -64,8 +64,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--calibration",
         default="fixed",
-        choices=["fixed", "aruco"],
-        help="Use fixed camera-to-base calibration by default, or recompute it from ArUco markers.",
+        choices=["fixed", "aruco", "aruco_legacy"],
+        help="Use fixed calibration, 3D ArUco point alignment, or the legacy ArUco calibration.",
     )
     parser.add_argument("--approach-height", type=float, default=0.12, help="Vertical approach offset in meters.")
     parser.add_argument("--grasp-height-offset", type=float, default=0.02, help="Offset above detected object for grasp.")
@@ -188,6 +188,8 @@ def main() -> None:
     panda_transformations = PandaTransformations(cam_operations=camera_operations)
     if args.calibration == "fixed":
         panda_transformations.use_fixed_camera_calibration()
+    elif args.calibration == "aruco":
+        panda_transformations.calibrate_camera_from_aruco_3d()
     else:
         panda_transformations.calibrate_camera()
 

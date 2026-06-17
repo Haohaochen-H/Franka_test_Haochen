@@ -67,6 +67,62 @@ class PandaTransformations:
         ])
         print(f"[INFO] Using fixed T_base_to_camera:\n{np.round(self.T_base_to_camera, 4)}")
 
+    def calibrate_camera_from_aruco_3d(self) -> None:
+        """
+        Calibrate camera->base directly from matched 3D ArUco corner points.
+
+        The ArUco IDs are mapped to the old table corner coordinates:
+        id 0 -> left-bottom  -> corner_0
+        id 1 -> right-bottom -> corner_1
+        id 2 -> right-top    -> corner_2
+        id 3 -> left-top     -> corner_3
+
+        This fits p_base ~= R @ p_camera + t with a rigid Kabsch alignment.
+        """
+        print("[INFO] Calibrating camera with 3D ArUco point alignment...")
+        detected_markers = self.camera_operations.get_marker_transforms()
+        if len(detected_markers) < 4:
+            raise RuntimeError("Not all 4 corners were detected")
+
+        camera_points = []
+        base_points = []
+        for corner_name in ("corner_0", "corner_1", "corner_2", "corner_3"):
+            if corner_name not in detected_markers:
+                raise RuntimeError(f"Missing {corner_name} for 3D calibration")
+            camera_points.append(detected_markers[corner_name][:3, 3])
+            base_points.append(self.table_corners_translations[corner_name])
+
+        camera_points = np.asarray(camera_points, dtype=float)
+        base_points = np.asarray(base_points, dtype=float)
+        R_cam_to_base, t_cam_to_base = self._fit_rigid_transform(camera_points, base_points)
+
+        self.T_base_to_camera = np.eye(4)
+        self.T_base_to_camera[:3, :3] = R_cam_to_base
+        self.T_base_to_camera[:3, 3] = t_cam_to_base
+
+        predicted_base = (R_cam_to_base @ camera_points.T).T + t_cam_to_base
+        errors = base_points - predicted_base
+        print(f"[INFO] 3D ArUco camera points:\n{np.round(camera_points, 4)}")
+        print(f"[INFO] 3D ArUco base points:\n{np.round(base_points, 4)}")
+        print(f"[INFO] 3D ArUco fit errors:\n{np.round(errors, 4)}")
+        print(f"[INFO] 3D ArUco mean error: {np.linalg.norm(errors, axis=1).mean():.4f} m")
+        print(f"[INFO] 3D ArUco T_camera_to_base:\n{np.round(self.T_base_to_camera, 4)}")
+
+    def _fit_rigid_transform(self, source_points: np.ndarray, target_points: np.ndarray):
+        source_centroid = source_points.mean(axis=0)
+        target_centroid = target_points.mean(axis=0)
+        source_centered = source_points - source_centroid
+        target_centered = target_points - target_centroid
+
+        H = source_centered.T @ target_centered
+        U, _, Vt = np.linalg.svd(H)
+        R_mat = Vt.T @ U.T
+        if np.linalg.det(R_mat) < 0:
+            Vt[-1, :] *= -1
+            R_mat = Vt.T @ U.T
+        t_vec = target_centroid - R_mat @ source_centroid
+        return R_mat, t_vec
+
     def calibrate_corners_relative_to_base(self) -> None:
         """
         Calibrate the corners relative to the base frame.
