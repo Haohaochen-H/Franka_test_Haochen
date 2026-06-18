@@ -20,13 +20,11 @@ from klemol_planner.camera_utils.camera_operations import CameraOperations
 from klemol_planner.environment.environment_transformations import PandaTransformations
 from klemol_planner.goals.point_with_orientation import PointWithOrientation
 from klemol_planner.vlm_yolo.pixel_xy_transform import pixel_to_base_xy
+from klemol_planner.vlm_yolo.table_height import TABLE_Z_BASE_OFFSET, target_z_from_table_height
 from klemol_planner.vlm_yolo.yaw_policy import requires_yolo_yaw, target_yaw_from_detection, yaw_policy_label
 from klemol_planner.vlm_yolo.yolo_module import YoloObjectDetector, print_detections
 from single_test import choose_detection, default_weights_path, detection_to_base_point, write_debug_image
 from vlm_yolo_dynamic_demo import RRTGroundedExecutor
-
-
-TABLE_Z_BASE_OFFSET = 0.17
 
 
 def parse_args() -> argparse.Namespace:
@@ -119,7 +117,7 @@ def main() -> None:
         relative_table_z = 0.50
     else:
         relative_table_z = args.table_z
-    target_z = TABLE_Z_BASE_OFFSET + relative_table_z
+    target_z = target_z_from_table_height(relative_table_z)
     if args.yaw_source == "yolo":
         if selected.yaw_rad is None and requires_yolo_yaw(selected):
             raise RuntimeError("YOLO yaw is None. Use --yaw-source transform/fixed or check yaw estimation.")

@@ -5,7 +5,7 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 import sys
-from typing import List
+from typing import List, Optional
 
 import cv2
 import numpy as np
@@ -18,6 +18,8 @@ if str(PACKAGE_ROOT) not in sys.path:
 from klemol_planner.camera_utils.camera_operations import CameraOperations
 from klemol_planner.environment.environment_transformations import PandaTransformations
 from klemol_planner.goals.point_with_orientation import PointWithOrientation
+from klemol_planner.vlm_yolo.pixel_xy_transform import pixel_to_base_xy
+from klemol_planner.vlm_yolo.table_height import TABLE_Z_BASE_OFFSET, target_z_from_table_height
 from klemol_planner.vlm_yolo.yaw_policy import target_yaw_from_detection
 from klemol_planner.vlm_yolo.yolo_module import YoloDetection, YoloObjectDetector, print_detections
 from vlm_yolo_dynamic_demo import RRTGroundedExecutor
@@ -73,6 +75,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--approach-height", type=float, default=0.12, help="Vertical approach offset in meters.")
     parser.add_argument("--grasp-height-offset", type=float, default=0.02, help="Offset above detected object for grasp.")
     parser.add_argument(
+        "--xy-source",
+        default="transform",
+        choices=["transform", "pixel"],
+        help="Use camera->base transform or fixed pixel->base XY homography for object XY.",
+    )
+    parser.add_argument(
+        "--table-z",
+        type=float,
+        default=None,
+        help="Override object grasp/place z with this height above the table plane. Internally adds 0.17 m.",
+    )
+    parser.add_argument(
         "--debug-image",
         default="auto",
         help="Path for the annotated YOLO debug image. Use 'auto' for a timestamped debug_images file or an empty string to disable saving.",
@@ -118,6 +132,23 @@ def detection_to_base_point(detection: YoloDetection, panda_transformations: Pan
     )
     point_base = panda_transformations.transform_point(point_camera, "camera", "base")
     point_base.yaw = target_yaw_from_detection(detection)
+    return point_base
+
+
+def apply_planar_overrides(
+    point_base: PointWithOrientation,
+    detection: YoloDetection,
+    xy_source: str,
+    table_z: Optional[float],
+) -> PointWithOrientation:
+    if xy_source == "pixel":
+        if detection.center_pixel is None:
+            raise RuntimeError("Selected object has no center pixel for pixel XY transform.")
+        point_base.x, point_base.y = pixel_to_base_xy(detection.center_pixel)
+
+    if table_z is not None:
+        point_base.z = target_z_from_table_height(table_z)
+
     return point_base
 
 
@@ -215,8 +246,19 @@ def main() -> None:
         show_image=args.show_image,
     )
     object_point_base = detection_to_base_point(selected, panda_transformations)
+    object_point_base = apply_planar_overrides(
+        object_point_base,
+        detection=selected,
+        xy_source=args.xy_source,
+        table_z=args.table_z,
+    )
     print(f"[SINGLE_TEST] selected={selected.object_id} class={selected.class_name} conf={selected.confidence:.3f}")
     print(f"[SINGLE_TEST] base_point={object_point_base}")
+    print(
+        f"[SINGLE_TEST] xy_source={args.xy_source} "
+        f"table_z={args.table_z} "
+        f"table_offset={TABLE_Z_BASE_OFFSET:.3f}"
+    )
 
     if not args.execute:
         print("[DRY-RUN] Detection and base-frame grounding succeeded. Re-run with --execute to pick.")
