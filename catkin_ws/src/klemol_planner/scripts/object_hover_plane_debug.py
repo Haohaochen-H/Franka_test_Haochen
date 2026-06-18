@@ -20,12 +20,13 @@ from klemol_planner.camera_utils.camera_operations import CameraOperations
 from klemol_planner.environment.environment_transformations import PandaTransformations
 from klemol_planner.goals.point_with_orientation import PointWithOrientation
 from klemol_planner.vlm_yolo.pixel_xy_transform import pixel_to_base_xy
+from klemol_planner.vlm_yolo.yaw_policy import requires_yolo_yaw, target_yaw_from_detection, yaw_policy_label
 from klemol_planner.vlm_yolo.yolo_module import YoloObjectDetector, print_detections
 from single_test import choose_detection, default_weights_path, detection_to_base_point, write_debug_image
 from vlm_yolo_dynamic_demo import RRTGroundedExecutor
 
 
-TABLE_Z_BASE_OFFSET = 0.20
+TABLE_Z_BASE_OFFSET = 0.17
 
 
 def parse_args() -> argparse.Namespace:
@@ -53,7 +54,7 @@ def parse_args() -> argparse.Namespace:
         "--table-z",
         type=float,
         default=None,
-        help="Target height above the table plane. Internally adds the measured table offset 0.20 m.",
+        help="Target height above the table plane. Internally adds the measured table offset 0.17 m.",
     )
     parser.add_argument(
         "--yaw-source",
@@ -66,7 +67,7 @@ def parse_args() -> argparse.Namespace:
         "--yaw-offset",
         type=float,
         default=-math.pi * 0.5,
-        help="Extra yaw offset in radians. Use about 1.5708 to rotate gripper 90 degrees from object yaw.",
+        help="Extra yaw offset in radians for fixed/transform yaw sources. The yolo source uses object-specific policy.",
     )
     parser.add_argument("--debug-image", default="auto", help="Annotated YOLO image path, 'auto', or empty string.")
     parser.add_argument("--show-image", action="store_true", help="Show annotated YOLO image in an OpenCV window.")
@@ -120,9 +121,9 @@ def main() -> None:
         relative_table_z = args.table_z
     target_z = TABLE_Z_BASE_OFFSET + relative_table_z
     if args.yaw_source == "yolo":
-        if selected.yaw_rad is None:
+        if selected.yaw_rad is None and requires_yolo_yaw(selected):
             raise RuntimeError("YOLO yaw is None. Use --yaw-source transform/fixed or check yaw estimation.")
-        target_yaw = selected.yaw_rad + args.yaw_offset
+        target_yaw = target_yaw_from_detection(selected)
     elif args.yaw_source == "fixed":
         target_yaw = args.fixed_yaw + args.yaw_offset
     else:
@@ -142,7 +143,11 @@ def main() -> None:
     print(f"[HOVER_PLANE_DEBUG] yolo_yaw={selected.yaw_rad} object_base_yaw={object_base.yaw}")
     print(f"[HOVER_PLANE_DEBUG] object_base={object_base}")
     print(f"[HOVER_PLANE_DEBUG] xy_source={args.xy_source} target_xy=({target_x:.4f}, {target_y:.4f})")
-    print(f"[HOVER_PLANE_DEBUG] yaw_source={args.yaw_source} yaw_offset={args.yaw_offset:.4f} target_yaw={target_yaw:.4f}")
+    print(
+        f"[HOVER_PLANE_DEBUG] yaw_source={args.yaw_source} "
+        f"yaw_policy={yaw_policy_label(selected) if args.yaw_source == 'yolo' else 'manual'} "
+        f"yaw_offset={args.yaw_offset:.4f} target_yaw={target_yaw:.4f}"
+    )
     print(
         f"[HOVER_PLANE_DEBUG] target_z={target_z:.4f} "
         f"from table_offset={TABLE_Z_BASE_OFFSET:.4f} + relative_table_z={relative_table_z:.4f}"

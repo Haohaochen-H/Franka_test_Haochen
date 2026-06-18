@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from klemol_planner.goals.point_with_orientation import PointWithOrientation
+from klemol_planner.vlm_yolo.yaw_policy import target_yaw_from_detection
 from klemol_planner.vlm_yolo.yolo_module import YoloDetection
 
 
@@ -74,9 +75,10 @@ class PlanGrounder:
         if detection.position_camera is None:
             raise ValueError(f"Detection '{detection.object_id}' has no 3D camera position.")
         x, y, z = detection.position_camera
-        yaw = detection.yaw_rad or 0.0
-        point_camera = PointWithOrientation(x=x, y=y, z=z, roll=0.0, pitch=0.0, yaw=yaw)
-        return self.panda_transformations.transform_point(point_camera, "camera", "base")
+        point_camera = PointWithOrientation(x=x, y=y, z=z, roll=0.0, pitch=0.0, yaw=0.0)
+        point_base = self.panda_transformations.transform_point(point_camera, "camera", "base")
+        point_base.yaw = target_yaw_from_detection(detection)
+        return point_base
 
 
 def normalize_name(name: str) -> str:

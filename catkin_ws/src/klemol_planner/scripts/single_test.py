@@ -18,6 +18,7 @@ if str(PACKAGE_ROOT) not in sys.path:
 from klemol_planner.camera_utils.camera_operations import CameraOperations
 from klemol_planner.environment.environment_transformations import PandaTransformations
 from klemol_planner.goals.point_with_orientation import PointWithOrientation
+from klemol_planner.vlm_yolo.yaw_policy import target_yaw_from_detection
 from klemol_planner.vlm_yolo.yolo_module import YoloDetection, YoloObjectDetector, print_detections
 from vlm_yolo_dynamic_demo import RRTGroundedExecutor
 
@@ -113,9 +114,11 @@ def detection_to_base_point(detection: YoloDetection, panda_transformations: Pan
         z=z,
         roll=0.0,
         pitch=0.0,
-        yaw=detection.yaw_rad or 0.0,
+        yaw=0.0,
     )
-    return panda_transformations.transform_point(point_camera, "camera", "base")
+    point_base = panda_transformations.transform_point(point_camera, "camera", "base")
+    point_base.yaw = target_yaw_from_detection(detection)
+    return point_base
 
 
 def normalize_name(name: str) -> str:
