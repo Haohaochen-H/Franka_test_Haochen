@@ -116,6 +116,8 @@ The scripts look for YOLO weights in this order:
 ```text
 ros1_vlm_yolo_integration/catkin_ws/src/klemol_planner/models/best.pt
 ros1_vlm_yolo_integration/catkin_ws/src/klemol_planner/models/yolov8n.pt
+ros1_vlm_yolo_integration/../YOLO_test/runs/detect/runs/detect/five_objects/weights/best.pt
+ros1_vlm_yolo_integration/external/YOLO_test/runs/detect/five_objects/weights/best.pt
 /home/haochenhe/YOLO_test/runs/detect/three_objects/weights/best.pt
 ros1_vlm_yolo_integration/../YOLO_test/runs/detect/runs/detect/three_objects/weights/best.pt
 ros1_vlm_yolo_integration/external/YOLO_test/runs/detect/three_objects/weights/best.pt

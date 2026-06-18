@@ -1,10 +1,12 @@
 # YOLO Object Detection Project
 
-这个项目当前用于训练 YOLO 模型识别 3 类物体：
+这个项目当前用于训练 YOLO 模型识别 5 类物体：
 
 - `Cleaner_bottle`: Cleaner bottle
 - `Salt_box`: Salt box
 - `tomato_soup_can`: Tomato soup can
+- `Orange_cube`: Orange cube
+- `Yellow_cube`: Yellow cube
 
 ## 1. 安装环境
 
@@ -57,6 +59,8 @@ class_id x_center y_center width height
 0 Cleaner_bottle
 1 Salt_box
 2 tomato_soup_can
+3 Orange_cube
+4 Yellow_cube
 ```
 
 ## OpenCV 轮廓 yaw 估计
@@ -105,13 +109,13 @@ python train.py
 默认使用 `yolov8n.pt`，速度快，适合先验证流程。训练结果会保存在：
 
 ```text
-runs/detect/three_objects/
+runs/detect/five_objects/
 ```
 
 训练好的模型通常在：
 
 ```text
-runs/detect/three_objects/weights/best.pt
+runs/detect/five_objects/weights/best.pt
 ```
 
 ## 6. 测试预测

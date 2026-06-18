@@ -28,6 +28,8 @@ def default_weights_path() -> str:
     candidates = [
         package_root / "models" / "best.pt",
         package_root / "models" / "yolov8n.pt",
+        repo_root / "YOLO_test" / "runs" / "detect" / "runs" / "detect" / "five_objects" / "weights" / "best.pt",
+        repo_root / "external" / "YOLO_test" / "runs" / "detect" / "five_objects" / "weights" / "best.pt",
         Path("/home/haochenhe/YOLO_test/runs/detect/three_objects/weights/best.pt"),
         repo_root / "YOLO_test" / "runs" / "detect" / "runs" / "detect" / "three_objects" / "weights" / "best.pt",
         repo_root / "external" / "YOLO_test" / "runs" / "detect" / "three_objects" / "weights" / "best.pt",
