@@ -2,13 +2,27 @@ cmake_minimum_required(VERSION 3.0.2)
 project(klemol_planner)
 
 find_package(catkin REQUIRED COMPONENTS
+  message_generation
   rospy
   std_msgs
   geometry_msgs
 )
 
 catkin_python_setup()
-catkin_package()
+
+add_service_files(
+  FILES
+  GenerateVlmPlan.srv
+)
+
+generate_messages(
+  DEPENDENCIES
+  std_msgs
+)
+
+catkin_package(
+  CATKIN_DEPENDS message_runtime rospy std_msgs geometry_msgs
+)
 
 include_directories(
   ${catkin_INCLUDE_DIRS}
@@ -28,6 +42,8 @@ catkin_install_python(PROGRAMS
   scripts/single_test.py
   scripts/yolo_pose_debug.py
   scripts/vlm_yolo_dynamic_demo.py
+  scripts/vlm_planner_node.py
+  scripts/vlm_plan_client.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

@@ -1,0 +1,7 @@
+string instruction
+---
+bool success
+string message
+string plan_json
+string detections_json
+string grounded_json
