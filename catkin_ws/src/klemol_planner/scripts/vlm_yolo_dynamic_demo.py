@@ -54,6 +54,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--conf", type=float, default=0.25, help="YOLO confidence threshold.")
     parser.add_argument("--ollama-host", default="http://localhost:11434", help="Ollama host URL.")
     parser.add_argument("--model-name", default="gemma3:4b", help="Ollama model name.")
+    parser.add_argument("--critic-model-name", default="", help="Optional separate Ollama model for the critic.")
+    parser.add_argument("--max-rounds", type=int, default=3, help="Maximum planner-critic refinement rounds.")
     parser.add_argument("--planner", default="rrt_with_connecting", choices=["rrt_with_connecting"])
     parser.add_argument("--post-processing", default="quintic_polynomial", choices=["quintic_polynomial"])
     parser.add_argument(
@@ -204,8 +206,24 @@ def main() -> None:
     if not detections:
         raise RuntimeError("No YOLO detections available for VLM planning.")
 
-    vlm = VlmPlanner(model_name=args.model_name, host=args.ollama_host)
-    plan = vlm.generate_plan(instruction=instruction, detections=detections)
+    vlm = VlmPlanner(
+        model_name=args.model_name,
+        critic_model_name=args.critic_model_name or None,
+        host=args.ollama_host,
+        max_rounds=args.max_rounds,
+    )
+    result = vlm.generate_plan_result(
+        instruction=instruction,
+        detections=detections,
+        color_image=color_image,
+    )
+    for record in result.history:
+        print(f"[VLM][round {record.iteration}] critic_pass={record.critic_pass} feedback={record.critic_feedback}")
+    if not result.success:
+        print(f"[VLM] max rounds reached; using last valid plan. Last feedback: {result.feedback}")
+    plan = result.plan
+    if not plan:
+        raise RuntimeError(f"VLM planner produced no valid plan. Last feedback: {result.feedback}")
     print(f"[VLM] plan: {plan}")
 
     grounder = PlanGrounder(panda_transformations)

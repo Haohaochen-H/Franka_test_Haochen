@@ -19,7 +19,7 @@ Added integration flow:
 scripts/vlm_yolo_dynamic_demo.py
 -> CameraOperations captures RealSense color/depth
 -> YoloObjectDetector returns structured detections
--> VlmPlanner generates a pick/place plan through Ollama
+-> VlmPlanner runs an Ollama planner-critic loop
 -> PlanGrounder maps object names to detected 3D points
 -> optional RRTGroundedExecutor executes pick/place with the old RRT stack
 ```
@@ -80,6 +80,9 @@ rosrun klemol_planner vlm_yolo_dynamic_demo.py \
 - The script still depends on the old ArUco-based `PandaTransformations.calibrate_camera()`, so all required ArUco markers must be visible.
 - The default YOLO weights path is `catkin_ws/src/klemol_planner/models/best.pt`. Pass `--weights path/to/model.pt` only when you want to override it.
 - The VLM planner expects Ollama to be running at `http://localhost:11434` by default.
+- The VLM prompts are tailored to the five task object classes: `Cleaner_bottle`, `Salt_box`, `tomato_soup_can`, `Orange_cube`, and `Yellow_cube`.
+- The planner proposes a JSON `Pick`/`Place` sequence, then the critic checks robot arm state, action order, visible object validity, task completion, and occupied/blocked target objects. Failed critic feedback is sent back to the planner for up to `--max-rounds` attempts.
+- Use `--critic-model-name MODEL` if you want the critic to use a different Ollama model from `--model-name`.
 
 ## Single-object YOLO pick test
 

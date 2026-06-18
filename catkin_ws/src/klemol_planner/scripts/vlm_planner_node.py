@@ -28,8 +28,10 @@ from single_test import default_weights_path
 class Ros1VlmPlannerNode:
     def __init__(self) -> None:
         self.model_name = rospy.get_param("~model_name", "gemma3:4b")
+        self.critic_model_name = rospy.get_param("~critic_model_name", self.model_name)
         self.ollama_host = rospy.get_param("~ollama_host", "http://localhost:11434")
         self.timeout = int(rospy.get_param("~timeout", 120))
+        self.max_rounds = int(rospy.get_param("~max_rounds", 3))
         self.weights = rospy.get_param("~weights", default_weights_path())
         self.confidence = float(rospy.get_param("~confidence", 0.25))
         self.calibration = rospy.get_param("~calibration", "fixed")
@@ -46,8 +48,10 @@ class Ros1VlmPlannerNode:
         )
         self.vlm = VlmPlanner(
             model_name=self.model_name,
+            critic_model_name=self.critic_model_name,
             host=self.ollama_host,
             timeout=self.timeout,
+            max_rounds=self.max_rounds,
         )
         self.grounder = PlanGrounder(self.transformer)
 
@@ -89,8 +93,25 @@ class Ros1VlmPlannerNode:
                 plan = self._demo_plan(detections)
                 message = "demo plan generated"
             else:
-                plan = self.vlm.generate_plan(instruction=instruction, detections=detections)
-                message = "VLM plan generated"
+                result = self.vlm.generate_plan_result(
+                    instruction=instruction,
+                    detections=detections,
+                    color_image=color_image,
+                )
+                plan = result.plan
+                if not plan:
+                    raise RuntimeError(f"VLM planner produced no valid plan. Last feedback: {result.feedback}")
+                for record in result.history:
+                    rospy.loginfo(
+                        "[VLM_NODE] critic round %d pass=%s feedback=%s",
+                        record.iteration,
+                        record.critic_pass,
+                        record.critic_feedback,
+                    )
+                message = "VLM planner-critic plan generated" if result.success else (
+                    "VLM planner-critic reached max rounds; using last valid plan. "
+                    f"Last feedback: {result.feedback}"
+                )
 
             grounded = self.grounder.ground(plan, detections)
             return GenerateVlmPlanResponse(
