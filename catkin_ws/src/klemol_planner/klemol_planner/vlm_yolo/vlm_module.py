@@ -44,7 +44,7 @@ Object naming:
 
 Executor input convention:
 - Pick target uses scene_objects[target].base_pose as object_point_base.
-- Place target uses scene_objects[target_object].base_pose as target_point_base.
+- Place target uses scene_objects[target_object].base_pose plus the picked object's object_height as target_point_base.z, so stacking does not press into the support object.
 - The executor will expand each Pick/Place into all required intermediate waypoints.
 
 Planner-critic mechanism:

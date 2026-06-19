@@ -5,7 +5,7 @@ from typing import Any, Optional
 
 from klemol_planner.goals.point_with_orientation import PointWithOrientation
 from klemol_planner.vlm_yolo.pixel_xy_transform import pixel_to_base_xy
-from klemol_planner.vlm_yolo.table_height import TABLE_Z_BASE_OFFSET, target_z_from_table_height
+from klemol_planner.vlm_yolo.table_height import TABLE_Z_BASE_OFFSET, table_z_for_object, target_z_from_table_height
 from klemol_planner.vlm_yolo.yaw_policy import target_yaw_from_detection, yaw_policy_label
 from klemol_planner.vlm_yolo.yolo_module import YoloDetection
 
@@ -21,12 +21,17 @@ def build_scene_objects(
     scene_objects = []
     for detection in detections:
         base_pose = detection_to_base_pose(detection, panda_transformations)
+        object_table_z = table_z_for_object(
+            class_name=detection.class_name,
+            object_id=detection.object_id,
+            override_table_z=table_z,
+        )
         if xy_source == "pixel":
             if detection.center_pixel is None:
                 raise ValueError(f"Detection {detection.object_id} has no center pixel.")
             base_pose.x, base_pose.y = pixel_to_base_xy(detection.center_pixel)
-        if table_z is not None:
-            base_pose.z = target_z_from_table_height(table_z)
+        if object_table_z is not None:
+            base_pose.z = target_z_from_table_height(object_table_z)
 
         grasp_pose = copy_pose(base_pose)
         grasp_pose.z += grasp_height_offset
@@ -52,7 +57,8 @@ def build_scene_objects(
                 "pre_grasp_pose": point_to_dict(pre_grasp_pose),
                 "grasp_pose": point_to_dict(grasp_pose),
                 "lift_pose": point_to_dict(lift_pose),
-                "table_z": round_float(table_z),
+                "table_z": round_float(object_table_z),
+                "object_height": round_float(object_table_z),
                 "table_offset": round_float(TABLE_Z_BASE_OFFSET),
             }
         )
@@ -117,6 +123,7 @@ def build_executor_steps(plan: list[dict[str, Any]], scene_objects: list[dict[st
 
     held_object_id = ""
     held_object_point = None
+    held_object_height = 0.0
     steps = []
     for step in plan:
         action = str(step.get("action", "")).strip().lower()
@@ -124,6 +131,7 @@ def build_executor_steps(plan: list[dict[str, Any]], scene_objects: list[dict[st
             source = scene_by_name[normalize_name(step["target"])]
             held_object_id = source["object_id"]
             held_object_point = source["base_pose"]
+            held_object_height = float(source.get("object_height") or 0.0)
             steps.append(
                 {
                     "skill": "pick",
@@ -135,17 +143,21 @@ def build_executor_steps(plan: list[dict[str, Any]], scene_objects: list[dict[st
             )
         elif action == "place":
             target = scene_by_name[normalize_name(step["target_object"])]
+            target_point = dict(target["base_pose"])
+            target_point["z"] = round_float(float(target_point["z"]) + held_object_height)
             steps.append(
                 {
                     "skill": "place",
                     "object_id": held_object_id,
                     "target_id": target["object_id"],
                     "object_point_base": held_object_point,
-                    "target_point_base": target["base_pose"],
+                    "target_point_base": target_point,
+                    "stacking_height_offset": round_float(held_object_height),
                 }
             )
             held_object_id = ""
             held_object_point = None
+            held_object_height = 0.0
         else:
             raise ValueError(f"Unsupported executor action: {step}")
     return steps
