@@ -23,16 +23,14 @@ TASK_OBJECTS = [
 
 
 PLANNER_SYSTEM_PROMPT = """You are the planning VLM for a Franka Panda robot in a tabletop pick-and-place task.
-Observe the current camera image, YOLO detections, and base-frame object coordinates, then convert the human instruction into a low-level robot control sequence.
+Observe the current camera image, YOLO detections, and base-frame object coordinates, then convert the human instruction into an executor-level robot plan.
 
-Action space:
-- You may only use "Move" and "Gripper".
-- A Move step moves the end effector from start to end while the gripper stays open or closed.
-- A Gripper step opens or closes the gripper at the current end-effector position.
-- Use coordinates exactly from the scene object poses when possible. Do not invent coordinates.
-- The first Move may use "start": "current_robot_pose" because the current robot pose is not part of the VLM input.
-- After the first Move, each step must start at exactly the previous step's end/current point.
-- Gripper continuity matters: do not close an already closed gripper, and do not open an already open gripper.
+Executor action space:
+- You may only use "Pick" and "Place".
+- A Pick step means: move to the object's executor pose, grasp it, and lift it. The executor will generate approach/grasp/lift waypoints.
+- A Place step means: move the currently held object to the target object's executor pose, release it, and retreat. The executor will generate approach/place/retreat waypoints.
+- Do not output intermediate Move/Gripper waypoints.
+- Do not output raw coordinates in the plan. Coordinates are provided in scene_objects and will be attached by the executor after your plan.
 
 Available task object classes:
 Cleaner_bottle, Salt_box, tomato_soup_can, Orange_cube, Yellow_cube.
@@ -44,18 +42,10 @@ Object naming:
 - If the instruction asks for an object that is not in the scene objects list, do not produce a plan.
 - If the instruction is ambiguous, impossible, unsafe, or any required object lacks coordinates, do not produce a plan.
 
-Coordinate convention:
-- All coordinates are in the Franka base frame, meters and radians.
-- For picking an object, use this sequence:
-  1. Move from current_robot_pose to that object's pre_grasp_pose with gripper "open".
-  2. Move from pre_grasp_pose to that object's grasp_pose with gripper "open".
-  3. Gripper "close" at grasp_pose.
-  4. Move from grasp_pose to that object's lift_pose with gripper "closed".
-- For placing onto another object or back to the same object location, use the target object's pre_grasp_pose/grasp_pose/lift_pose as the place poses:
-  1. Move from the current point to target pre_grasp_pose with gripper "closed".
-  2. Move from target pre_grasp_pose to target grasp_pose with gripper "closed".
-  3. Gripper "open" at target grasp_pose.
-  4. Move from target grasp_pose to target lift_pose with gripper "open".
+Executor input convention:
+- Pick target uses scene_objects[target].base_pose as object_point_base.
+- Place target uses scene_objects[target_object].base_pose as target_point_base.
+- The executor will expand each Pick/Place into all required intermediate waypoints.
 
 Planner-critic mechanism:
 Another VLM will act as a critic. If critic feedback is provided, revise the plan according to that feedback.
@@ -64,9 +54,8 @@ Output format:
 If the task is feasible, return JSON only, with exactly this shape:
 {
   "plan": [
-    {"order": "01", "action": "Move", "object_id": "Cleaner_bottle", "start": "current_robot_pose", "end": {"x": 0.40, "y": 0.10, "z": 0.40, "roll": 3.1416, "pitch": 0.0, "yaw": 0.0}, "gripper": "open"},
-    {"order": "02", "action": "Move", "object_id": "Cleaner_bottle", "start": {"x": 0.40, "y": 0.10, "z": 0.40, "roll": 3.1416, "pitch": 0.0, "yaw": 0.0}, "end": {"x": 0.40, "y": 0.10, "z": 0.20, "roll": 3.1416, "pitch": 0.0, "yaw": 0.0}, "gripper": "open"},
-    {"order": "03", "action": "Gripper", "object_id": "Cleaner_bottle", "position": {"x": 0.40, "y": 0.10, "z": 0.20, "roll": 3.1416, "pitch": 0.0, "yaw": 0.0}, "command": "close"}
+    {"order": "01", "action": "Pick", "target": "Orange_cube"},
+    {"order": "02", "action": "Place", "target_object": "Yellow_cube"}
   ]
 }
 
@@ -78,16 +67,15 @@ If the task cannot be completed, return JSON only, with exactly this shape:
 
 
 CRITIC_SYSTEM_PROMPT = """You are the critic VLM for a Franka Panda robot.
-Observe the current camera image, YOLO detections, base-frame object coordinates, the human instruction, and the planner low-level control sequence.
-Evaluate whether the sequence is physically feasible, safe, continuous, and logically correct for this tabletop task.
+Observe the current camera image, YOLO detections, base-frame object coordinates, the human instruction, and the planner executor-level action sequence.
+Evaluate whether the sequence is physically feasible, safe, and logically correct for this tabletop task.
 
 Evaluation standards:
-1. Point continuity: after the first Move, every step's start/position must match the previous step's end/current point.
-2. Gripper continuity: the gripper starts open; close only after reaching the grasp pose; move while holding with gripper closed; open only at the place pose.
-3. Coordinate validity: Move end and Gripper position should match provided scene object poses, not invented coordinates.
-4. Object validity: every object_id must be from the scene objects list.
-5. Task completion: the final sequence must satisfy the human instruction.
-6. Space constraints: if the target object is visibly occupied or blocked by another task object, the blocking object should be moved first.
+1. Action order: every Pick must be followed by a Place before another Pick.
+2. Holding state: the robot cannot Pick while already holding an object and cannot Place before Pick.
+3. Object validity: every Pick target and Place target_object must be from the scene objects list.
+4. Task completion: the final sequence must satisfy the human instruction.
+5. Space constraints: if the target object is visibly occupied or blocked by another task object, the blocking object should be moved first.
 
 Available task object classes:
 Cleaner_bottle, Salt_box, tomato_soup_can, Orange_cube, Yellow_cube.
@@ -355,68 +343,38 @@ def normalize_plan(
         valid_names = {det.object_id for det in detections}
         valid_names.update(det.class_name for det in detections)
 
-    allowed_points = _allowed_scene_points(scene_objects or [])
     normalized: list[dict[str, Any]] = []
-    current_point: Optional[dict[str, float]] = None
-    gripper_state = "open"
+    holding = False
     for index, step in enumerate(data, start=1):
         action = str(step.get("action", "")).strip()
-        if action not in {"Move", "Gripper"}:
+        if action not in {"Pick", "Place"}:
             raise ValueError(f"Unsupported action at step {index}: {action!r}")
 
-        object_id = str(step.get("object_id") or step.get("target") or "").strip()
-        if object_id and valid_names is not None and object_id not in valid_names:
-            raise ValueError(f"Step {index} object_id {object_id!r} is not visible.")
-
         out: dict[str, Any] = {"order": f"{index:02d}", "action": action}
-        if object_id:
-            out["object_id"] = object_id
-
-        if action == "Move":
-            start = step.get("start")
-            end = _normalize_pose(step.get("end"), f"step {index} end")
-            desired_gripper = str(step.get("gripper", "")).strip().lower()
-            if desired_gripper not in {"open", "closed"}:
-                raise ValueError(f"Move step {index} must set gripper to 'open' or 'closed'.")
-            if desired_gripper != gripper_state:
-                raise ValueError(
-                    f"Move step {index} says gripper is {desired_gripper}, "
-                    f"but current gripper state is {gripper_state}."
-                )
-            if current_point is None:
-                if not (start == "current_robot_pose" or start is None):
-                    start_pose = _normalize_pose(start, f"step {index} start")
-                    out["start"] = start_pose
-                else:
-                    out["start"] = "current_robot_pose"
-            else:
-                start_pose = _normalize_pose(start, f"step {index} start")
-                if not _poses_close(start_pose, current_point):
-                    raise ValueError(f"Move step {index} start does not match previous end/current point.")
-                out["start"] = start_pose
-            if allowed_points and not _matches_any_allowed_point(end, allowed_points):
-                raise ValueError(f"Move step {index} end is not one of the provided scene poses.")
-            out["end"] = end
-            out["gripper"] = desired_gripper
-            current_point = end
+        if action == "Pick":
+            if holding:
+                raise ValueError("Plan tries to Pick while already holding an object.")
+            target = str(step.get("target") or step.get("object_id") or "").strip()
+            if not target:
+                raise ValueError(f"Pick step {index} is missing target.")
+            if valid_names is not None and target not in valid_names:
+                raise ValueError(f"Pick target {target!r} is not visible.")
+            out["target"] = target
+            holding = True
         else:
-            position = _normalize_pose(step.get("position"), f"step {index} position")
-            command = str(step.get("command", "")).strip().lower()
-            if command not in {"open", "close"}:
-                raise ValueError(f"Gripper step {index} command must be 'open' or 'close'.")
-            if current_point is None:
-                raise ValueError(f"Gripper step {index} appears before any Move step.")
-            if not _poses_close(position, current_point):
-                raise ValueError(f"Gripper step {index} position does not match previous end/current point.")
-            if command == "close" and gripper_state == "closed":
-                raise ValueError(f"Gripper step {index} closes an already closed gripper.")
-            if command == "open" and gripper_state == "open":
-                raise ValueError(f"Gripper step {index} opens an already open gripper.")
-            gripper_state = "closed" if command == "close" else "open"
-            out["position"] = position
-            out["command"] = command
+            if not holding:
+                raise ValueError("Plan tries to Place before Pick.")
+            target = str(step.get("target_object") or step.get("target") or "").strip()
+            if not target:
+                raise ValueError(f"Place step {index} is missing target_object.")
+            if valid_names is not None and target not in valid_names:
+                raise ValueError(f"Place target_object {target!r} is not visible.")
+            out["target_object"] = target
+            holding = False
         normalized.append(out)
 
+    if holding:
+        raise ValueError("Final Pick has no matching Place.")
     return normalized
 
 

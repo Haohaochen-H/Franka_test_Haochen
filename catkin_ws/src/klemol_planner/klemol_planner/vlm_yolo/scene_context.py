@@ -107,3 +107,49 @@ def detections_to_jsonable(detections: list[YoloDetection]) -> list[dict[str, An
         return_item = dict(data)
         output.append(return_item)
     return output
+
+
+def build_executor_steps(plan: list[dict[str, Any]], scene_objects: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    scene_by_name = {}
+    for scene_object in scene_objects:
+        scene_by_name[normalize_name(scene_object["object_id"])] = scene_object
+        scene_by_name[normalize_name(scene_object["class_name"])] = scene_object
+
+    held_object_id = ""
+    held_object_point = None
+    steps = []
+    for step in plan:
+        action = str(step.get("action", "")).strip().lower()
+        if action == "pick":
+            source = scene_by_name[normalize_name(step["target"])]
+            held_object_id = source["object_id"]
+            held_object_point = source["base_pose"]
+            steps.append(
+                {
+                    "skill": "pick",
+                    "object_id": held_object_id,
+                    "target_id": "",
+                    "object_point_base": held_object_point,
+                    "target_point_base": None,
+                }
+            )
+        elif action == "place":
+            target = scene_by_name[normalize_name(step["target_object"])]
+            steps.append(
+                {
+                    "skill": "place",
+                    "object_id": held_object_id,
+                    "target_id": target["object_id"],
+                    "object_point_base": held_object_point,
+                    "target_point_base": target["base_pose"],
+                }
+            )
+            held_object_id = ""
+            held_object_point = None
+        else:
+            raise ValueError(f"Unsupported executor action: {step}")
+    return steps
+
+
+def normalize_name(name: str) -> str:
+    return str(name).strip().lower().replace(" ", "_").replace("-", "_")

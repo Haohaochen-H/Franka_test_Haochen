@@ -22,7 +22,7 @@ enable_generated_ros_modules(PACKAGE_ROOT)
 from klemol_planner.camera_utils.camera_operations import CameraOperations
 from klemol_planner.environment.environment_transformations import PandaTransformations
 from klemol_planner.srv import GenerateVlmPlan, GenerateVlmPlanResponse
-from klemol_planner.vlm_yolo.scene_context import build_scene_objects, detections_to_jsonable
+from klemol_planner.vlm_yolo.scene_context import build_executor_steps, build_scene_objects, detections_to_jsonable
 from klemol_planner.vlm_yolo.vlm_module import VlmPlanner
 from klemol_planner.vlm_yolo.yolo_module import YoloObjectDetector
 from single_test import default_weights_path
@@ -105,7 +105,7 @@ class Ros1VlmPlannerNode:
 
             if self.demo_mode:
                 plan = self._demo_plan(scene_objects)
-                message = "demo low-level control plan generated"
+                message = "demo executor plan generated"
             else:
                 result = self.vlm.generate_plan_result(
                     instruction=instruction,
@@ -123,7 +123,7 @@ class Ros1VlmPlannerNode:
                         grounded_json=json.dumps(
                             {
                                 "scene_objects": scene_objects,
-                                "control_plan": [],
+                                "executor_steps": [],
                                 "error": result.feedback,
                             },
                             ensure_ascii=False,
@@ -140,6 +140,7 @@ class Ros1VlmPlannerNode:
                     "VLM planner-critic reached max rounds; using last valid plan. "
                     f"Last feedback: {result.feedback}"
                 )
+            executor_steps = build_executor_steps(plan, scene_objects)
 
             return GenerateVlmPlanResponse(
                 success=True,
@@ -149,7 +150,7 @@ class Ros1VlmPlannerNode:
                 grounded_json=json.dumps(
                     {
                         "scene_objects": scene_objects,
-                        "control_plan": plan,
+                        "executor_steps": executor_steps,
                     },
                     ensure_ascii=False,
                 ),
@@ -170,68 +171,8 @@ class Ros1VlmPlannerNode:
         source = scene_objects[0]
         target = scene_objects[1]
         return [
-            {
-                "order": "01",
-                "action": "Move",
-                "object_id": source["object_id"],
-                "start": "current_robot_pose",
-                "end": source["pre_grasp_pose"],
-                "gripper": "open",
-            },
-            {
-                "order": "02",
-                "action": "Move",
-                "object_id": source["object_id"],
-                "start": source["pre_grasp_pose"],
-                "end": source["grasp_pose"],
-                "gripper": "open",
-            },
-            {
-                "order": "03",
-                "action": "Gripper",
-                "object_id": source["object_id"],
-                "position": source["grasp_pose"],
-                "command": "close",
-            },
-            {
-                "order": "04",
-                "action": "Move",
-                "object_id": source["object_id"],
-                "start": source["grasp_pose"],
-                "end": source["lift_pose"],
-                "gripper": "closed",
-            },
-            {
-                "order": "05",
-                "action": "Move",
-                "object_id": target["object_id"],
-                "start": source["lift_pose"],
-                "end": target["pre_grasp_pose"],
-                "gripper": "closed",
-            },
-            {
-                "order": "06",
-                "action": "Move",
-                "object_id": target["object_id"],
-                "start": target["pre_grasp_pose"],
-                "end": target["grasp_pose"],
-                "gripper": "closed",
-            },
-            {
-                "order": "07",
-                "action": "Gripper",
-                "object_id": target["object_id"],
-                "position": target["grasp_pose"],
-                "command": "open",
-            },
-            {
-                "order": "08",
-                "action": "Move",
-                "object_id": target["object_id"],
-                "start": target["grasp_pose"],
-                "end": target["lift_pose"],
-                "gripper": "open",
-            },
+            {"order": "01", "action": "Pick", "target": source["object_id"]},
+            {"order": "02", "action": "Place", "target_object": target["object_id"]},
         ]
 
 

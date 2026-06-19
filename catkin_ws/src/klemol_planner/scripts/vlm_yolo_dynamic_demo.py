@@ -23,7 +23,7 @@ from klemol_planner.planners.rrt_with_connecting import RRTWithConnectingPlanner
 from klemol_planner.post_processing.path_post_processing import PathPostProcessing
 from klemol_planner.utils.config_loader import load_planner_params
 from klemol_planner.vlm_yolo.grounding_module import GroundedStep
-from klemol_planner.vlm_yolo.scene_context import build_scene_objects
+from klemol_planner.vlm_yolo.scene_context import build_executor_steps, build_scene_objects
 from klemol_planner.vlm_yolo.vlm_module import VlmPlanner
 from klemol_planner.vlm_yolo.yolo_module import YoloObjectDetector, print_detections
 
@@ -122,6 +122,33 @@ class RRTGroundedExecutor:
                     raise ValueError(f"Unsupported gripper command: {command}")
             else:
                 raise ValueError(f"Unsupported control action: {step}")
+
+    def execute_executor_steps(
+        self,
+        steps: list[dict],
+        approach_height: float,
+        grasp_height_offset: float,
+        place_height_offset: float,
+    ) -> None:
+        for step in steps:
+            skill = str(step.get("skill", "")).lower()
+            if skill == "pick":
+                self.execute_pick(
+                    object_id=step["object_id"],
+                    object_point=self._pose_dict_to_point(step["object_point_base"]),
+                    approach_height=approach_height,
+                    grasp_height_offset=grasp_height_offset,
+                )
+            elif skill == "place":
+                self.execute_place(
+                    object_id=step["object_id"],
+                    target_id=step["target_id"],
+                    target_point=self._pose_dict_to_point(step["target_point_base"]),
+                    approach_height=approach_height,
+                    place_height_offset=place_height_offset,
+                )
+            else:
+                raise ValueError(f"Unsupported executor step: {step}")
 
     def _pose_dict_to_point(self, pose: dict) -> PointWithOrientation:
         return PointWithOrientation(
@@ -267,15 +294,22 @@ def main() -> None:
         print(f"[VLM] stopped without a plan: {result.feedback}")
         print(f"[SCENE_OBJECTS] {scene_objects}")
         return
+    executor_steps = build_executor_steps(plan, scene_objects)
     print(f"[VLM] plan: {plan}")
     print(f"[SCENE_OBJECTS] {scene_objects}")
+    print(f"[EXECUTOR_STEPS] {executor_steps}")
 
     if not args.execute:
-        print("[DRY-RUN] Low-level control plan is ready. Re-run with --execute to move the robot.")
+        print("[DRY-RUN] Executor plan is ready. Re-run with --execute to move the robot.")
         return
 
     executor = RRTGroundedExecutor(args.planner, args.post_processing)
-    executor.execute_control_plan(plan)
+    executor.execute_executor_steps(
+        executor_steps,
+        approach_height=args.approach_height,
+        grasp_height_offset=args.grasp_height_offset,
+        place_height_offset=args.place_height_offset,
+    )
 
 
 if __name__ == "__main__":
