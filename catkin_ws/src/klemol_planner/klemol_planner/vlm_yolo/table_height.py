@@ -6,8 +6,8 @@ DEFAULT_TABLE_Z_BY_OBJECT = {
 }
 
 DEFAULT_OBJECT_HEIGHT_BY_OBJECT = {
-    "orange_cube": 0.05,
-    "yellow_cube": 0.03,
+    "orange_cube": 0.055,
+    "yellow_cube": 0.035,
 }
 
 
