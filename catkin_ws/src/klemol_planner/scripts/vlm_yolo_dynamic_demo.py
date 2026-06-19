@@ -264,7 +264,9 @@ def main() -> None:
         print(f"[VLM] max rounds reached; using last valid plan. Last feedback: {result.feedback}")
     plan = result.plan
     if not plan:
-        raise RuntimeError(f"VLM planner produced no valid plan. Last feedback: {result.feedback}")
+        print(f"[VLM] stopped without a plan: {result.feedback}")
+        print(f"[SCENE_OBJECTS] {scene_objects}")
+        return
     print(f"[VLM] plan: {plan}")
     print(f"[SCENE_OBJECTS] {scene_objects}")
 

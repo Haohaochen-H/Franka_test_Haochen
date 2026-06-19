@@ -115,7 +115,20 @@ class Ros1VlmPlannerNode:
                 )
                 plan = result.plan
                 if not plan:
-                    raise RuntimeError(f"VLM planner produced no valid plan. Last feedback: {result.feedback}")
+                    return GenerateVlmPlanResponse(
+                        success=False,
+                        message=f"VLM planner stopped: {result.feedback}",
+                        plan_json="[]",
+                        detections_json=json.dumps(detections_to_jsonable(detections), ensure_ascii=False),
+                        grounded_json=json.dumps(
+                            {
+                                "scene_objects": scene_objects,
+                                "control_plan": [],
+                                "error": result.feedback,
+                            },
+                            ensure_ascii=False,
+                        ),
+                    )
                 for record in result.history:
                     rospy.loginfo(
                         "[VLM_NODE] critic round %d pass=%s feedback=%s",

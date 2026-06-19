@@ -41,6 +41,8 @@ Object naming:
 - Use only object_id values from the scene objects list.
 - If the instruction uses a class name, map it to the matching visible object_id.
 - Do not invent objects, locations, bins, boxes, or unprovided coordinates.
+- If the instruction asks for an object that is not in the scene objects list, do not produce a plan.
+- If the instruction is ambiguous, impossible, unsafe, or any required object lacks coordinates, do not produce a plan.
 
 Coordinate convention:
 - All coordinates are in the Franka base frame, meters and radians.
@@ -59,13 +61,18 @@ Planner-critic mechanism:
 Another VLM will act as a critic. If critic feedback is provided, revise the plan according to that feedback.
 
 Output format:
-Return JSON only, with exactly this shape:
+If the task is feasible, return JSON only, with exactly this shape:
 {
   "plan": [
     {"order": "01", "action": "Move", "object_id": "Cleaner_bottle", "start": "current_robot_pose", "end": {"x": 0.40, "y": 0.10, "z": 0.40, "roll": 3.1416, "pitch": 0.0, "yaw": 0.0}, "gripper": "open"},
     {"order": "02", "action": "Move", "object_id": "Cleaner_bottle", "start": {"x": 0.40, "y": 0.10, "z": 0.40, "roll": 3.1416, "pitch": 0.0, "yaw": 0.0}, "end": {"x": 0.40, "y": 0.10, "z": 0.20, "roll": 3.1416, "pitch": 0.0, "yaw": 0.0}, "gripper": "open"},
     {"order": "03", "action": "Gripper", "object_id": "Cleaner_bottle", "position": {"x": 0.40, "y": 0.10, "z": 0.20, "roll": 3.1416, "pitch": 0.0, "yaw": 0.0}, "command": "close"}
   ]
+}
+
+If the task cannot be completed, return JSON only, with exactly this shape:
+{
+  "error": "Missing required object: object_name"
 }
 """
 
@@ -95,6 +102,12 @@ or
 {
   "pass": false,
   "feedback": "Concrete correction for the planner."
+}
+
+If the planner returned an error because required objects are missing or the task is impossible, pass the error through:
+{
+  "pass": false,
+  "feedback": "Planner correctly stopped: Missing required object: object_name"
 }
 """
 
@@ -165,7 +178,12 @@ class VlmPlanner:
             )
             planner_raw = self._ollama_generate(planner_prompt, model_name=self.model_name, images=images)
             try:
-                plan = normalize_plan(extract_json(planner_raw), detections, scene_objects)
+                planner_data = extract_json(planner_raw)
+                planner_error = extract_planner_error(planner_data)
+                if planner_error:
+                    history.append(CriticRecord(iteration, planner_raw, None, None, False, planner_error))
+                    return VlmPlannerResult(plan=[], success=False, feedback=planner_error, history=history)
+                plan = normalize_plan(planner_data, detections, scene_objects)
                 plan_json = json.dumps(plan, ensure_ascii=False)
                 previous_plan_json = plan_json
                 last_valid_plan = plan
@@ -358,6 +376,17 @@ def normalize_plan(
         normalized.append(out)
 
     return normalized
+
+
+def extract_planner_error(data: Any) -> str:
+    if isinstance(data, dict):
+        error = str(data.get("error") or "").strip()
+        if error:
+            return error
+        status = str(data.get("status") or "").strip().lower()
+        if status in {"error", "failed", "failure"}:
+            return str(data.get("message") or data.get("feedback") or "Planner reported failure.").strip()
+    return ""
 
 
 def _normalize_pose(value: Any, label: str) -> dict[str, float]:
