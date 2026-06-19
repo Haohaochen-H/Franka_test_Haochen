@@ -39,7 +39,12 @@ class Ros1VlmPlannerNode:
         self.confidence = float(rospy.get_param("~confidence", 0.25))
         self.calibration = rospy.get_param("~calibration", "fixed")
         self.xy_source = rospy.get_param("~xy_source", "pixel")
-        table_z_param = rospy.get_param("~table_z", None)
+        if rospy.has_param("~table_z"):
+            rospy.logwarn(
+                "[VLM_NODE] Ignoring legacy private param ~table_z. "
+                "Use ~override_table_z only when you intentionally want one height for all objects."
+            )
+        table_z_param = rospy.get_param("~override_table_z", None)
         self.table_z = None if table_z_param in ("", None) else float(table_z_param)
         self.approach_height = float(rospy.get_param("~approach_height", 0.20))
         self.grasp_height_offset = float(rospy.get_param("~grasp_height_offset", 0.0))
