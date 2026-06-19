@@ -5,7 +5,12 @@ from typing import Any, Optional
 
 from klemol_planner.goals.point_with_orientation import PointWithOrientation
 from klemol_planner.vlm_yolo.pixel_xy_transform import pixel_to_base_xy
-from klemol_planner.vlm_yolo.table_height import TABLE_Z_BASE_OFFSET, table_z_for_object, target_z_from_table_height
+from klemol_planner.vlm_yolo.table_height import (
+    TABLE_Z_BASE_OFFSET,
+    object_height_for_object,
+    table_z_for_object,
+    target_z_from_table_height,
+)
 from klemol_planner.vlm_yolo.yaw_policy import target_yaw_from_detection, yaw_policy_label
 from klemol_planner.vlm_yolo.yolo_module import YoloDetection
 
@@ -25,6 +30,10 @@ def build_scene_objects(
             class_name=detection.class_name,
             object_id=detection.object_id,
             override_table_z=table_z,
+        )
+        object_height = object_height_for_object(
+            class_name=detection.class_name,
+            object_id=detection.object_id,
         )
         if xy_source == "pixel":
             if detection.center_pixel is None:
@@ -58,7 +67,7 @@ def build_scene_objects(
                 "grasp_pose": point_to_dict(grasp_pose),
                 "lift_pose": point_to_dict(lift_pose),
                 "table_z": round_float(object_table_z),
-                "object_height": round_float(object_table_z),
+                "object_height": round_float(object_height),
                 "table_offset": round_float(TABLE_Z_BASE_OFFSET),
             }
         )

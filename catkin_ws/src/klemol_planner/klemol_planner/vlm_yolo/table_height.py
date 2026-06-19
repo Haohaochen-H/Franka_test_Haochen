@@ -2,7 +2,12 @@ TABLE_Z_BASE_OFFSET = 0.17
 
 DEFAULT_TABLE_Z_BY_OBJECT = {
     "orange_cube": 0.03,
-    "yellow_cube": 0.02,
+    "yellow_cube": 0.01,
+}
+
+DEFAULT_OBJECT_HEIGHT_BY_OBJECT = {
+    "orange_cube": 0.05,
+    "yellow_cube": 0.03,
 }
 
 
@@ -22,3 +27,12 @@ def table_z_for_object(class_name: str, object_id: str = "", override_table_z=No
         if normalized in DEFAULT_TABLE_Z_BY_OBJECT:
             return DEFAULT_TABLE_Z_BY_OBJECT[normalized]
     return None
+
+
+def object_height_for_object(class_name: str, object_id: str = ""):
+    for name in (class_name, object_id):
+        normalized = normalize_name(name)
+        if normalized in DEFAULT_OBJECT_HEIGHT_BY_OBJECT:
+            return DEFAULT_OBJECT_HEIGHT_BY_OBJECT[normalized]
+    table_z = table_z_for_object(class_name=class_name, object_id=object_id)
+    return table_z
