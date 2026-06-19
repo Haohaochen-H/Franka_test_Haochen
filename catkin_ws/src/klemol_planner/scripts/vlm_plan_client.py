@@ -3,8 +3,21 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
+import sys
 
 import rospy
+
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(PACKAGE_ROOT) not in sys.path:
+    sys.path.insert(0, str(PACKAGE_ROOT))
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from ros_python_path import enable_generated_ros_modules
+
+enable_generated_ros_modules(PACKAGE_ROOT)
 
 from klemol_planner.srv import GenerateVlmPlan
 

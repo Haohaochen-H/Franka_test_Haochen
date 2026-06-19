@@ -15,6 +15,10 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+from ros_python_path import enable_generated_ros_modules
+
+enable_generated_ros_modules(PACKAGE_ROOT)
+
 from klemol_planner.camera_utils.camera_operations import CameraOperations
 from klemol_planner.environment.environment_transformations import PandaTransformations
 from klemol_planner.srv import GenerateVlmPlan, GenerateVlmPlanResponse
