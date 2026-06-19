@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
 from pathlib import Path
 import sys
 
@@ -19,7 +18,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from klemol_planner.camera_utils.camera_operations import CameraOperations
 from klemol_planner.environment.environment_transformations import PandaTransformations
 from klemol_planner.srv import GenerateVlmPlan, GenerateVlmPlanResponse
-from klemol_planner.vlm_yolo.grounding_module import PlanGrounder
+from klemol_planner.vlm_yolo.scene_context import build_scene_objects, detections_to_jsonable
 from klemol_planner.vlm_yolo.vlm_module import VlmPlanner
 from klemol_planner.vlm_yolo.yolo_module import YoloObjectDetector
 from single_test import default_weights_path
@@ -35,6 +34,11 @@ class Ros1VlmPlannerNode:
         self.weights = rospy.get_param("~weights", default_weights_path())
         self.confidence = float(rospy.get_param("~confidence", 0.25))
         self.calibration = rospy.get_param("~calibration", "fixed")
+        self.xy_source = rospy.get_param("~xy_source", "pixel")
+        table_z_param = rospy.get_param("~table_z", None)
+        self.table_z = None if table_z_param in ("", None) else float(table_z_param)
+        self.approach_height = float(rospy.get_param("~approach_height", 0.20))
+        self.grasp_height_offset = float(rospy.get_param("~grasp_height_offset", 0.0))
         self.demo_mode = bool(rospy.get_param("~demo_mode", False))
 
         rospy.loginfo("[VLM_NODE] loading camera, YOLO, and VLM clients")
@@ -53,8 +57,6 @@ class Ros1VlmPlannerNode:
             timeout=self.timeout,
             max_rounds=self.max_rounds,
         )
-        self.grounder = PlanGrounder(self.transformer)
-
         self.service = rospy.Service("/generate_vlm_plan", GenerateVlmPlan, self.handle_generate_plan)
         rospy.loginfo("[VLM_NODE] ready: /generate_vlm_plan")
 
@@ -88,15 +90,24 @@ class Ros1VlmPlannerNode:
                 intrinsics=intrinsics,
             )
             rospy.loginfo("[VLM_NODE] detections: %s", ", ".join(det.object_id for det in detections) or "none")
+            scene_objects = build_scene_objects(
+                detections=detections,
+                panda_transformations=self.transformer,
+                xy_source=self.xy_source,
+                table_z=self.table_z,
+                approach_height=self.approach_height,
+                grasp_height_offset=self.grasp_height_offset,
+            )
 
             if self.demo_mode:
-                plan = self._demo_plan(detections)
-                message = "demo plan generated"
+                plan = self._demo_plan(scene_objects)
+                message = "demo low-level control plan generated"
             else:
                 result = self.vlm.generate_plan_result(
                     instruction=instruction,
                     detections=detections,
                     color_image=color_image,
+                    scene_objects=scene_objects,
                 )
                 plan = result.plan
                 if not plan:
@@ -113,13 +124,18 @@ class Ros1VlmPlannerNode:
                     f"Last feedback: {result.feedback}"
                 )
 
-            grounded = self.grounder.ground(plan, detections)
             return GenerateVlmPlanResponse(
                 success=True,
                 message=message,
                 plan_json=json.dumps(plan, ensure_ascii=False),
-                detections_json=json.dumps([self._detection_to_dict(det) for det in detections], ensure_ascii=False),
-                grounded_json=json.dumps([self._grounded_to_dict(step) for step in grounded], ensure_ascii=False),
+                detections_json=json.dumps(detections_to_jsonable(detections), ensure_ascii=False),
+                grounded_json=json.dumps(
+                    {
+                        "scene_objects": scene_objects,
+                        "control_plan": plan,
+                    },
+                    ensure_ascii=False,
+                ),
             )
         except Exception as exc:
             rospy.logerr("[VLM_NODE] failed: %s", exc)
@@ -131,42 +147,75 @@ class Ros1VlmPlannerNode:
                 grounded_json="[]",
             )
 
-    def _demo_plan(self, detections):
-        if len(detections) < 2:
+    def _demo_plan(self, scene_objects):
+        if len(scene_objects) < 2:
             raise RuntimeError("demo_mode needs at least two detected objects")
+        source = scene_objects[0]
+        target = scene_objects[1]
         return [
-            {"order": "01", "action": "Pick", "target": detections[0].object_id},
-            {"order": "02", "action": "Place", "target_object": detections[1].object_id},
+            {
+                "order": "01",
+                "action": "Move",
+                "object_id": source["object_id"],
+                "start": "current_robot_pose",
+                "end": source["pre_grasp_pose"],
+                "gripper": "open",
+            },
+            {
+                "order": "02",
+                "action": "Move",
+                "object_id": source["object_id"],
+                "start": source["pre_grasp_pose"],
+                "end": source["grasp_pose"],
+                "gripper": "open",
+            },
+            {
+                "order": "03",
+                "action": "Gripper",
+                "object_id": source["object_id"],
+                "position": source["grasp_pose"],
+                "command": "close",
+            },
+            {
+                "order": "04",
+                "action": "Move",
+                "object_id": source["object_id"],
+                "start": source["grasp_pose"],
+                "end": source["lift_pose"],
+                "gripper": "closed",
+            },
+            {
+                "order": "05",
+                "action": "Move",
+                "object_id": target["object_id"],
+                "start": source["lift_pose"],
+                "end": target["pre_grasp_pose"],
+                "gripper": "closed",
+            },
+            {
+                "order": "06",
+                "action": "Move",
+                "object_id": target["object_id"],
+                "start": target["pre_grasp_pose"],
+                "end": target["grasp_pose"],
+                "gripper": "closed",
+            },
+            {
+                "order": "07",
+                "action": "Gripper",
+                "object_id": target["object_id"],
+                "position": target["grasp_pose"],
+                "command": "open",
+            },
+            {
+                "order": "08",
+                "action": "Move",
+                "object_id": target["object_id"],
+                "start": target["grasp_pose"],
+                "end": target["lift_pose"],
+                "gripper": "open",
+            },
         ]
-
-    def _detection_to_dict(self, detection):
-        data = asdict(detection)
-        if detection.center_pixel is not None:
-            data["center_pixel"] = list(detection.center_pixel)
-        if detection.position_camera is not None:
-            data["position_camera"] = list(detection.position_camera)
-        return data
-
-    def _grounded_to_dict(self, step):
-        return {
-            "skill": step.skill,
-            "object_id": step.object_id,
-            "target_id": step.target_id,
-            "object_point_base": self._point_to_dict(step.object_point_base),
-            "target_point_base": self._point_to_dict(step.target_point_base),
-        }
-
-    def _point_to_dict(self, point):
-        if point is None:
-            return None
-        return {
-            "x": point.x,
-            "y": point.y,
-            "z": point.z,
-            "roll": point.roll,
-            "pitch": point.pitch,
-            "yaw": point.yaw,
-        }
 
 
 def main() -> None:

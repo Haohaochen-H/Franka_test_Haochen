@@ -23,21 +23,37 @@ TASK_OBJECTS = [
 
 
 PLANNER_SYSTEM_PROMPT = """You are the planning VLM for a Franka Panda robot in a tabletop pick-and-place task.
-Observe the current camera image and the YOLO detections, then convert the human instruction into a short low-level action sequence.
+Observe the current camera image, YOLO detections, and base-frame object coordinates, then convert the human instruction into a low-level robot control sequence.
 
 Action space:
-- You may only use "Pick" and "Place".
-- A Pick step must be {"order": "01", "action": "Pick", "target": "object_id"}.
-- A Place step must be {"order": "02", "action": "Place", "target_object": "object_id"}.
-- Every Pick must be followed by one Place before another Pick.
+- You may only use "Move" and "Gripper".
+- A Move step moves the end effector from start to end while the gripper stays open or closed.
+- A Gripper step opens or closes the gripper at the current end-effector position.
+- Use coordinates exactly from the scene object poses when possible. Do not invent coordinates.
+- The first Move may use "start": "current_robot_pose" because the current robot pose is not part of the VLM input.
+- After the first Move, each step must start at exactly the previous step's end/current point.
+- Gripper continuity matters: do not close an already closed gripper, and do not open an already open gripper.
 
 Available task object classes:
 Cleaner_bottle, Salt_box, tomato_soup_can, Orange_cube, Yellow_cube.
 
 Object naming:
-- Use only object_id values from the visible objects list.
+- Use only object_id values from the scene objects list.
 - If the instruction uses a class name, map it to the matching visible object_id.
-- Do not invent objects, locations, bins, boxes, or coordinates.
+- Do not invent objects, locations, bins, boxes, or unprovided coordinates.
+
+Coordinate convention:
+- All coordinates are in the Franka base frame, meters and radians.
+- For picking an object, use this sequence:
+  1. Move from current_robot_pose to that object's pre_grasp_pose with gripper "open".
+  2. Move from pre_grasp_pose to that object's grasp_pose with gripper "open".
+  3. Gripper "close" at grasp_pose.
+  4. Move from grasp_pose to that object's lift_pose with gripper "closed".
+- For placing onto another object or back to the same object location, use the target object's pre_grasp_pose/grasp_pose/lift_pose as the place poses:
+  1. Move from the current point to target pre_grasp_pose with gripper "closed".
+  2. Move from target pre_grasp_pose to target grasp_pose with gripper "closed".
+  3. Gripper "open" at target grasp_pose.
+  4. Move from target grasp_pose to target lift_pose with gripper "open".
 
 Planner-critic mechanism:
 Another VLM will act as a critic. If critic feedback is provided, revise the plan according to that feedback.
@@ -46,72 +62,28 @@ Output format:
 Return JSON only, with exactly this shape:
 {
   "plan": [
-    {"order": "01", "action": "Pick", "target": "Cleaner_bottle"},
-    {"order": "02", "action": "Place", "target_object": "Salt_box"}
-  ]
-}
-
-Examples:
-Human: Put the Cleaner_bottle on the Salt_box.
-Robot:
-{
-  "plan": [
-    {"order": "01", "action": "Pick", "target": "Cleaner_bottle"},
-    {"order": "02", "action": "Place", "target_object": "Salt_box"}
-  ]
-}
-
-Human: Move the Orange_cube to the Yellow_cube, then place the tomato_soup_can on the Salt_box.
-Robot:
-{
-  "plan": [
-    {"order": "01", "action": "Pick", "target": "Orange_cube"},
-    {"order": "02", "action": "Place", "target_object": "Yellow_cube"},
-    {"order": "03", "action": "Pick", "target": "tomato_soup_can"},
-    {"order": "04", "action": "Place", "target_object": "Salt_box"}
-  ]
-}
-
-Human: Clear the Salt_box for the Cleaner_bottle.
-Critic VLM: The image shows Orange_cube already occupying the Salt_box. Move Orange_cube to Yellow_cube first, then place Cleaner_bottle on Salt_box.
-Robot:
-{
-  "plan": [
-    {"order": "01", "action": "Pick", "target": "Orange_cube"},
-    {"order": "02", "action": "Place", "target_object": "Yellow_cube"},
-    {"order": "03", "action": "Pick", "target": "Cleaner_bottle"},
-    {"order": "04", "action": "Place", "target_object": "Salt_box"}
+    {"order": "01", "action": "Move", "object_id": "Cleaner_bottle", "start": "current_robot_pose", "end": {"x": 0.40, "y": 0.10, "z": 0.40, "roll": 3.1416, "pitch": 0.0, "yaw": 0.0}, "gripper": "open"},
+    {"order": "02", "action": "Move", "object_id": "Cleaner_bottle", "start": {"x": 0.40, "y": 0.10, "z": 0.40, "roll": 3.1416, "pitch": 0.0, "yaw": 0.0}, "end": {"x": 0.40, "y": 0.10, "z": 0.20, "roll": 3.1416, "pitch": 0.0, "yaw": 0.0}, "gripper": "open"},
+    {"order": "03", "action": "Gripper", "object_id": "Cleaner_bottle", "position": {"x": 0.40, "y": 0.10, "z": 0.20, "roll": 3.1416, "pitch": 0.0, "yaw": 0.0}, "command": "close"}
   ]
 }
 """
 
 
 CRITIC_SYSTEM_PROMPT = """You are the critic VLM for a Franka Panda robot.
-Observe the current camera image, the YOLO detections, the human instruction, and the planner action sequence.
-Evaluate whether the sequence is physically feasible, safe, and logically correct for this tabletop task.
+Observe the current camera image, YOLO detections, base-frame object coordinates, the human instruction, and the planner low-level control sequence.
+Evaluate whether the sequence is physically feasible, safe, continuous, and logically correct for this tabletop task.
 
 Evaluation standards:
-1. Robot arm state: the robot cannot Pick another object while already holding one.
-2. Action order: check for reversed, missing, duplicated, or illogical actions.
-3. Object validity: every Pick target and Place target_object must be a visible object_id.
-4. Task completion: the final sequence must satisfy the human instruction.
-5. Space constraints: if the target object is visibly occupied or blocked by another task object, the blocking object should be moved first.
+1. Point continuity: after the first Move, every step's start/position must match the previous step's end/current point.
+2. Gripper continuity: the gripper starts open; close only after reaching the grasp pose; move while holding with gripper closed; open only at the place pose.
+3. Coordinate validity: Move end and Gripper position should match provided scene object poses, not invented coordinates.
+4. Object validity: every object_id must be from the scene objects list.
+5. Task completion: the final sequence must satisfy the human instruction.
+6. Space constraints: if the target object is visibly occupied or blocked by another task object, the blocking object should be moved first.
 
 Available task object classes:
 Cleaner_bottle, Salt_box, tomato_soup_can, Orange_cube, Yellow_cube.
-
-Example:
-Task: Put the Cleaner_bottle on the Salt_box.
-Robot:
-[
-  {"order": "01", "action": "Pick", "target": "Cleaner_bottle"},
-  {"order": "02", "action": "Place", "target_object": "Salt_box"}
-]
-Critic VLM:
-{
-  "pass": false,
-  "feedback": "The image shows Orange_cube on the Salt_box. Move Orange_cube to Yellow_cube first, then place Cleaner_bottle on Salt_box."
-}
 
 Response format:
 Return JSON only:
@@ -131,7 +103,7 @@ or
 class CriticRecord:
     iteration: int
     planner_raw: str
-    plan: Optional[list[dict[str, str]]]
+    plan: Optional[list[dict[str, Any]]]
     critic_raw: Optional[str]
     critic_pass: bool
     critic_feedback: str
@@ -139,7 +111,7 @@ class CriticRecord:
 
 @dataclass
 class VlmPlannerResult:
-    plan: list[dict[str, str]]
+    plan: list[dict[str, Any]]
     success: bool
     feedback: str = ""
     history: list[CriticRecord] = field(default_factory=list)
@@ -165,26 +137,35 @@ class VlmPlanner:
         instruction: str,
         detections: list[YoloDetection],
         color_image: Optional[np.ndarray] = None,
-    ) -> list[dict[str, str]]:
-        return self.generate_plan_result(instruction, detections, color_image).plan
+        scene_objects: Optional[list[dict[str, Any]]] = None,
+    ) -> list[dict[str, Any]]:
+        return self.generate_plan_result(instruction, detections, color_image, scene_objects).plan
 
     def generate_plan_result(
         self,
         instruction: str,
         detections: list[YoloDetection],
         color_image: Optional[np.ndarray] = None,
+        scene_objects: Optional[list[dict[str, Any]]] = None,
     ) -> VlmPlannerResult:
         images = [_encode_image_base64(color_image)] if color_image is not None else None
         feedback = ""
         previous_plan_json = ""
-        last_valid_plan: list[dict[str, str]] = []
+        last_valid_plan: list[dict[str, Any]] = []
         history: list[CriticRecord] = []
+        scene_objects = scene_objects or []
 
         for iteration in range(1, self.max_rounds + 1):
-            planner_prompt = self._build_planner_prompt(instruction, detections, feedback, previous_plan_json)
+            planner_prompt = self._build_planner_prompt(
+                instruction,
+                detections,
+                scene_objects,
+                feedback,
+                previous_plan_json,
+            )
             planner_raw = self._ollama_generate(planner_prompt, model_name=self.model_name, images=images)
             try:
-                plan = normalize_plan(extract_json(planner_raw), detections)
+                plan = normalize_plan(extract_json(planner_raw), detections, scene_objects)
                 plan_json = json.dumps(plan, ensure_ascii=False)
                 previous_plan_json = plan_json
                 last_valid_plan = plan
@@ -193,7 +174,7 @@ class VlmPlanner:
                 history.append(CriticRecord(iteration, planner_raw, None, None, False, feedback))
                 continue
 
-            critic_prompt = self._build_critic_prompt(instruction, detections, plan_json)
+            critic_prompt = self._build_critic_prompt(instruction, detections, scene_objects, plan_json)
             critic_raw = self._ollama_generate(critic_prompt, model_name=self.critic_model_name, images=images)
             critic = parse_critic_response(critic_raw)
             feedback = critic["feedback"]
@@ -211,16 +192,21 @@ class VlmPlanner:
             visible.append(data)
         return json.dumps(visible, ensure_ascii=False)
 
+    def _scene_objects_json(self, scene_objects: list[dict[str, Any]]) -> str:
+        return json.dumps(scene_objects, ensure_ascii=False)
+
     def _build_planner_prompt(
         self,
         instruction: str,
         detections: list[YoloDetection],
+        scene_objects: list[dict[str, Any]],
         critic_feedback: str = "",
         previous_plan_json: str = "",
     ) -> str:
         parts = [
             PLANNER_SYSTEM_PROMPT,
-            f"Visible objects: {self._visible_objects_json(detections)}",
+            f"YOLO detections: {self._visible_objects_json(detections)}",
+            f"Scene objects with base-frame coordinates: {self._scene_objects_json(scene_objects)}",
             f"Human instruction: {instruction}",
         ]
         if previous_plan_json:
@@ -230,11 +216,18 @@ class VlmPlanner:
         parts.append('Output only JSON with key "plan".')
         return "\n\n".join(parts)
 
-    def _build_critic_prompt(self, instruction: str, detections: list[YoloDetection], plan_json: str) -> str:
+    def _build_critic_prompt(
+        self,
+        instruction: str,
+        detections: list[YoloDetection],
+        scene_objects: list[dict[str, Any]],
+        plan_json: str,
+    ) -> str:
         return "\n\n".join(
             [
                 CRITIC_SYSTEM_PROMPT,
-                f"Visible objects: {self._visible_objects_json(detections)}",
+                f"YOLO detections: {self._visible_objects_json(detections)}",
+                f"Scene objects with base-frame coordinates: {self._scene_objects_json(scene_objects)}",
                 f"Human instruction: {instruction}",
                 f"Planner action sequence: {plan_json}",
                 "Critic VLM:",
@@ -287,7 +280,11 @@ def extract_json(text: str) -> Any:
     return json.loads(match.group(1))
 
 
-def normalize_plan(data: Any, detections: Optional[list[YoloDetection]] = None) -> list[dict[str, str]]:
+def normalize_plan(
+    data: Any,
+    detections: Optional[list[YoloDetection]] = None,
+    scene_objects: Optional[list[dict[str, Any]]] = None,
+) -> list[dict[str, Any]]:
     if isinstance(data, dict):
         data = data.get("plan", data)
     if not isinstance(data, list):
@@ -298,38 +295,104 @@ def normalize_plan(data: Any, detections: Optional[list[YoloDetection]] = None) 
         valid_names = {det.object_id for det in detections}
         valid_names.update(det.class_name for det in detections)
 
-    normalized: list[dict[str, str]] = []
-    holding = False
+    allowed_points = _allowed_scene_points(scene_objects or [])
+    normalized: list[dict[str, Any]] = []
+    current_point: Optional[dict[str, float]] = None
+    gripper_state = "open"
     for index, step in enumerate(data, start=1):
         action = str(step.get("action", "")).strip()
-        if action not in {"Pick", "Place"}:
+        if action not in {"Move", "Gripper"}:
             raise ValueError(f"Unsupported action at step {index}: {action!r}")
-        out = {"order": f"{index:02d}", "action": action}
-        if action == "Pick":
-            if holding:
-                raise ValueError("Plan tries to Pick while already holding an object.")
-            target = str(step.get("target", "")).strip()
-            if not target:
-                raise ValueError(f"Pick step {index} is missing target.")
-            if valid_names is not None and target not in valid_names:
-                raise ValueError(f"Pick target {target!r} is not a visible object_id.")
-            out["target"] = target
-            holding = True
+
+        object_id = str(step.get("object_id") or step.get("target") or "").strip()
+        if object_id and valid_names is not None and object_id not in valid_names:
+            raise ValueError(f"Step {index} object_id {object_id!r} is not visible.")
+
+        out: dict[str, Any] = {"order": f"{index:02d}", "action": action}
+        if object_id:
+            out["object_id"] = object_id
+
+        if action == "Move":
+            start = step.get("start")
+            end = _normalize_pose(step.get("end"), f"step {index} end")
+            desired_gripper = str(step.get("gripper", "")).strip().lower()
+            if desired_gripper not in {"open", "closed"}:
+                raise ValueError(f"Move step {index} must set gripper to 'open' or 'closed'.")
+            if desired_gripper != gripper_state:
+                raise ValueError(
+                    f"Move step {index} says gripper is {desired_gripper}, "
+                    f"but current gripper state is {gripper_state}."
+                )
+            if current_point is None:
+                if not (start == "current_robot_pose" or start is None):
+                    start_pose = _normalize_pose(start, f"step {index} start")
+                    out["start"] = start_pose
+                else:
+                    out["start"] = "current_robot_pose"
+            else:
+                start_pose = _normalize_pose(start, f"step {index} start")
+                if not _poses_close(start_pose, current_point):
+                    raise ValueError(f"Move step {index} start does not match previous end/current point.")
+                out["start"] = start_pose
+            if allowed_points and not _matches_any_allowed_point(end, allowed_points):
+                raise ValueError(f"Move step {index} end is not one of the provided scene poses.")
+            out["end"] = end
+            out["gripper"] = desired_gripper
+            current_point = end
         else:
-            if not holding:
-                raise ValueError("Plan tries to Place before Pick.")
-            target = str(step.get("target_object") or step.get("target") or "").strip()
-            if not target:
-                raise ValueError(f"Place step {index} is missing target_object.")
-            if valid_names is not None and target not in valid_names:
-                raise ValueError(f"Place target_object {target!r} is not a visible object_id.")
-            out["target_object"] = target
-            holding = False
+            position = _normalize_pose(step.get("position"), f"step {index} position")
+            command = str(step.get("command", "")).strip().lower()
+            if command not in {"open", "close"}:
+                raise ValueError(f"Gripper step {index} command must be 'open' or 'close'.")
+            if current_point is None:
+                raise ValueError(f"Gripper step {index} appears before any Move step.")
+            if not _poses_close(position, current_point):
+                raise ValueError(f"Gripper step {index} position does not match previous end/current point.")
+            if command == "close" and gripper_state == "closed":
+                raise ValueError(f"Gripper step {index} closes an already closed gripper.")
+            if command == "open" and gripper_state == "open":
+                raise ValueError(f"Gripper step {index} opens an already open gripper.")
+            gripper_state = "closed" if command == "close" else "open"
+            out["position"] = position
+            out["command"] = command
         normalized.append(out)
 
-    if holding:
-        raise ValueError("Final Pick has no matching Place.")
     return normalized
+
+
+def _normalize_pose(value: Any, label: str) -> dict[str, float]:
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must be a pose object.")
+    pose = {}
+    for key in ("x", "y", "z", "roll", "pitch", "yaw"):
+        if key not in value:
+            raise ValueError(f"{label} is missing {key}.")
+        try:
+            pose[key] = float(value[key])
+        except Exception as exc:
+            raise ValueError(f"{label}.{key} must be numeric.") from exc
+    return pose
+
+
+def _poses_close(a: dict[str, float], b: dict[str, float], tolerance: float = 1e-3) -> bool:
+    return all(abs(float(a[key]) - float(b[key])) <= tolerance for key in ("x", "y", "z", "roll", "pitch", "yaw"))
+
+
+def _allowed_scene_points(scene_objects: list[dict[str, Any]]) -> list[dict[str, float]]:
+    points = []
+    for obj in scene_objects:
+        for key in ("pre_grasp_pose", "grasp_pose", "lift_pose", "base_pose"):
+            pose = obj.get(key)
+            if isinstance(pose, dict):
+                try:
+                    points.append(_normalize_pose(pose, f"{obj.get('object_id', 'object')}.{key}"))
+                except ValueError:
+                    pass
+    return points
+
+
+def _matches_any_allowed_point(pose: dict[str, float], allowed_points: list[dict[str, float]]) -> bool:
+    return any(_poses_close(pose, allowed, tolerance=2e-3) for allowed in allowed_points)
 
 
 def parse_critic_response(text: str) -> dict[str, Any]:

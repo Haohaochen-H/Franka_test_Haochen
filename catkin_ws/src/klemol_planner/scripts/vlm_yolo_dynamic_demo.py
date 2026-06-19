@@ -22,7 +22,8 @@ from klemol_planner.goals.point_with_orientation import PointWithOrientation
 from klemol_planner.planners.rrt_with_connecting import RRTWithConnectingPlanner
 from klemol_planner.post_processing.path_post_processing import PathPostProcessing
 from klemol_planner.utils.config_loader import load_planner_params
-from klemol_planner.vlm_yolo.grounding_module import GroundedStep, PlanGrounder
+from klemol_planner.vlm_yolo.grounding_module import GroundedStep
+from klemol_planner.vlm_yolo.scene_context import build_scene_objects
 from klemol_planner.vlm_yolo.vlm_module import VlmPlanner
 from klemol_planner.vlm_yolo.yolo_module import YoloObjectDetector, print_detections
 
@@ -68,6 +69,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--approach-height", type=float, default=0.12, help="Vertical approach offset in meters.")
     parser.add_argument("--grasp-height-offset", type=float, default=0.02, help="Offset above detected object for grasp.")
     parser.add_argument("--place-height-offset", type=float, default=0.04, help="Offset above target for place.")
+    parser.add_argument("--xy-source", default="pixel", choices=["pixel", "transform"])
+    parser.add_argument("--table-z", type=float, default=None)
     return parser.parse_args()
 
 
@@ -100,6 +103,35 @@ class RRTGroundedExecutor:
                 self.execute_place(step.object_id, step.target_id, step.target_point_base, approach_height, place_height_offset)
             else:
                 raise ValueError(f"Unsupported grounded step: {step}")
+
+    def execute_control_plan(self, plan: list[dict]) -> None:
+        for step in plan:
+            action = str(step.get("action", "")).lower()
+            if action == "move":
+                self.execute_move_to_pose(
+                    label=f"{step.get('object_id', 'target')}_{step.get('order', '')}",
+                    target_pose=self._pose_dict_to_point(step["end"]),
+                )
+            elif action == "gripper":
+                command = str(step.get("command", "")).lower()
+                if command == "close":
+                    self.robot_model.close_gripper()
+                elif command == "open":
+                    self.robot_model.open_gripper()
+                else:
+                    raise ValueError(f"Unsupported gripper command: {command}")
+            else:
+                raise ValueError(f"Unsupported control action: {step}")
+
+    def _pose_dict_to_point(self, pose: dict) -> PointWithOrientation:
+        return PointWithOrientation(
+            x=float(pose["x"]),
+            y=float(pose["y"]),
+            z=float(pose["z"]),
+            roll=float(pose["roll"]),
+            pitch=float(pose["pitch"]),
+            yaw=float(pose["yaw"]),
+        )
 
     def execute_pick(
         self,
@@ -205,6 +237,14 @@ def main() -> None:
     print_detections(detections)
     if not detections:
         raise RuntimeError("No YOLO detections available for VLM planning.")
+    scene_objects = build_scene_objects(
+        detections=detections,
+        panda_transformations=panda_transformations,
+        xy_source=args.xy_source,
+        table_z=args.table_z,
+        approach_height=args.approach_height,
+        grasp_height_offset=args.grasp_height_offset,
+    )
 
     vlm = VlmPlanner(
         model_name=args.model_name,
@@ -216,6 +256,7 @@ def main() -> None:
         instruction=instruction,
         detections=detections,
         color_image=color_image,
+        scene_objects=scene_objects,
     )
     for record in result.history:
         print(f"[VLM][round {record.iteration}] critic_pass={record.critic_pass} feedback={record.critic_feedback}")
@@ -225,23 +266,14 @@ def main() -> None:
     if not plan:
         raise RuntimeError(f"VLM planner produced no valid plan. Last feedback: {result.feedback}")
     print(f"[VLM] plan: {plan}")
-
-    grounder = PlanGrounder(panda_transformations)
-    grounded_steps = grounder.ground(plan, detections)
-    for step in grounded_steps:
-        print(f"[GROUNDING] {step}")
+    print(f"[SCENE_OBJECTS] {scene_objects}")
 
     if not args.execute:
-        print("[DRY-RUN] Grounded plan is ready. Re-run with --execute to move the robot.")
+        print("[DRY-RUN] Low-level control plan is ready. Re-run with --execute to move the robot.")
         return
 
     executor = RRTGroundedExecutor(args.planner, args.post_processing)
-    executor.execute_steps(
-        grounded_steps,
-        approach_height=args.approach_height,
-        grasp_height_offset=args.grasp_height_offset,
-        place_height_offset=args.place_height_offset,
-    )
+    executor.execute_control_plan(plan)
 
 
 if __name__ == "__main__":
