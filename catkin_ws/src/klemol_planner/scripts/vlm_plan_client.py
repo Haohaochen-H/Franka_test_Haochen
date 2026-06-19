@@ -33,6 +33,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--approach-height", type=float, default=0.20, help="Vertical approach/lift offset in meters.")
     parser.add_argument("--grasp-height-offset", type=float, default=0.0, help="Offset above object pose for grasp.")
     parser.add_argument("--place-height-offset", type=float, default=0.0, help="Offset above target pose for place.")
+    parser.add_argument("--no-return-home", action="store_true", help="Do not return to the initial joint configuration after execution.")
     return parser.parse_args()
 
 
@@ -83,6 +84,7 @@ def main() -> None:
         approach_height=args.approach_height,
         grasp_height_offset=args.grasp_height_offset,
         place_height_offset=args.place_height_offset,
+        return_home=not args.no_return_home,
     )
     print("[VLM_EXECUTE] finished")
 

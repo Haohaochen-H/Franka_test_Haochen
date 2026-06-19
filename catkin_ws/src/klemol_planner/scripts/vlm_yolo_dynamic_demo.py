@@ -129,6 +129,7 @@ class RRTGroundedExecutor:
         approach_height: float,
         grasp_height_offset: float,
         place_height_offset: float,
+        return_home: bool = True,
     ) -> None:
         for step in steps:
             skill = str(step.get("skill", "")).lower()
@@ -149,6 +150,12 @@ class RRTGroundedExecutor:
                 )
             else:
                 raise ValueError(f"Unsupported executor step: {step}")
+        if return_home:
+            self.return_home()
+
+    def return_home(self) -> None:
+        rospy.loginfo(f"[VLM-YOLO] returning to initial joint configuration: {self.start_joint_config}")
+        self.robot_model.move_to_joint_config(self.start_joint_config)
 
     def _pose_dict_to_point(self, pose: dict) -> PointWithOrientation:
         return PointWithOrientation(
@@ -309,6 +316,7 @@ def main() -> None:
         approach_height=args.approach_height,
         grasp_height_offset=args.grasp_height_offset,
         place_height_offset=args.place_height_offset,
+        return_home=True,
     )
 
 
