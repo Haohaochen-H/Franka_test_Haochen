@@ -275,11 +275,19 @@ class VlmPlanner:
         if images:
             message["images"] = images
         client = Client(host=self.host)
-        response = client.chat(
-            model=model_name,
-            messages=[message],
-            options={"temperature": 0.0},
-        )
+        try:
+            response = client.chat(
+                model=model_name,
+                messages=[message],
+                format="json",
+                options={"temperature": 0.0},
+            )
+        except TypeError:
+            response = client.chat(
+                model=model_name,
+                messages=[message],
+                options={"temperature": 0.0},
+            )
         message_obj = response.get("message") if isinstance(response, dict) else getattr(response, "message", None)
         if isinstance(message_obj, dict):
             return str(message_obj.get("content", ""))
@@ -295,6 +303,7 @@ class VlmPlanner:
             "model": model_name,
             "prompt": prompt,
             "stream": False,
+            "format": "json",
             "options": {"temperature": 0.0},
         }
         if images:

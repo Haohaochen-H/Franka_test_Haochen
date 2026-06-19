@@ -41,19 +41,19 @@ def build_scene_objects(
             {
                 "object_id": detection.object_id,
                 "class_name": detection.class_name,
-                "confidence": detection.confidence,
+                "confidence": round_float(detection.confidence),
                 "bbox_xyxy": list(detection.bbox_xyxy),
                 "center_pixel": list(detection.center_pixel) if detection.center_pixel else None,
-                "center_depth_m": detection.center_depth_m,
-                "position_camera": list(detection.position_camera) if detection.position_camera else None,
-                "raw_yaw_rad": detection.yaw_rad,
+                "center_depth_m": round_float(detection.center_depth_m),
+                "position_camera": round_sequence(detection.position_camera),
+                "raw_yaw_rad": round_float(detection.yaw_rad),
                 "yaw_policy": yaw_policy_label(detection),
                 "base_pose": point_to_dict(base_pose),
                 "pre_grasp_pose": point_to_dict(pre_grasp_pose),
                 "grasp_pose": point_to_dict(grasp_pose),
                 "lift_pose": point_to_dict(lift_pose),
-                "table_z": table_z,
-                "table_offset": TABLE_Z_BASE_OFFSET,
+                "table_z": round_float(table_z),
+                "table_offset": round_float(TABLE_Z_BASE_OFFSET),
             }
         )
     return scene_objects
@@ -75,13 +75,25 @@ def copy_pose(point: PointWithOrientation) -> PointWithOrientation:
 
 def point_to_dict(point: PointWithOrientation) -> dict[str, float]:
     return {
-        "x": float(point.x),
-        "y": float(point.y),
-        "z": float(point.z),
-        "roll": float(point.roll),
-        "pitch": float(point.pitch),
-        "yaw": float(point.yaw),
+        "x": round_float(point.x),
+        "y": round_float(point.y),
+        "z": round_float(point.z),
+        "roll": round_float(point.roll),
+        "pitch": round_float(point.pitch),
+        "yaw": round_float(point.yaw),
     }
+
+
+def round_float(value: Optional[float], digits: int = 4):
+    if value is None:
+        return None
+    return round(float(value), digits)
+
+
+def round_sequence(values: Optional[tuple[float, ...]], digits: int = 4):
+    if values is None:
+        return None
+    return [round(float(value), digits) for value in values]
 
 
 def detections_to_jsonable(detections: list[YoloDetection]) -> list[dict[str, Any]]:
