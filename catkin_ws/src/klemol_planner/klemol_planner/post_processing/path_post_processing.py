@@ -69,7 +69,7 @@ class PathPostProcessing:
             velocity_limits: np.ndarray,
             acceleration_limits: np.ndarray,
             dt: float = 0.005,
-            max_vel_acc_multiplier: float = 0.1,
+            max_vel_acc_multiplier: float = 0.06,
             duration: float = None
         ) -> JointTrajectory:
         """
@@ -151,7 +151,7 @@ class PathPostProcessing:
         velocity_limits: np.ndarray,
         acceleration_limits: np.ndarray,
         dt: float = 0.005,
-        max_vel_acc_multiplier: float = 0.1,
+        max_vel_acc_multiplier: float = 0.06,
         duration: float = None
     ) -> JointTrajectory:
         """
@@ -250,7 +250,7 @@ class PathPostProcessing:
         velocity_limits: np.ndarray,
         acceleration_limits: np.ndarray,
         dt: float = 0.005,
-        max_vel_acc_multiplier: float = 0.1,
+        max_vel_acc_multiplier: float = 0.06,
         duration: float = None
     ) -> JointTrajectory:
         """
