@@ -258,6 +258,39 @@ class VlmPlanner:
         model_name: str,
         images: Optional[list[str]] = None,
     ) -> str:
+        try:
+            return self._ollama_chat(prompt, model_name=model_name, images=images)
+        except ImportError:
+            return self._ollama_generate_http(prompt, model_name=model_name, images=images)
+
+    def _ollama_chat(
+        self,
+        prompt: str,
+        model_name: str,
+        images: Optional[list[str]] = None,
+    ) -> str:
+        from ollama import Client
+
+        message: dict[str, Any] = {"role": "user", "content": prompt}
+        if images:
+            message["images"] = images
+        client = Client(host=self.host)
+        response = client.chat(
+            model=model_name,
+            messages=[message],
+            options={"temperature": 0.0},
+        )
+        message_obj = response.get("message") if isinstance(response, dict) else getattr(response, "message", None)
+        if isinstance(message_obj, dict):
+            return str(message_obj.get("content", ""))
+        return str(getattr(message_obj, "content", ""))
+
+    def _ollama_generate_http(
+        self,
+        prompt: str,
+        model_name: str,
+        images: Optional[list[str]] = None,
+    ) -> str:
         payload_data = {
             "model": model_name,
             "prompt": prompt,
