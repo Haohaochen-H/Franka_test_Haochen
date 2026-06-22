@@ -32,7 +32,7 @@ def parse_args() -> argparse.Namespace:
         description="Move the robot above the detected object's XY at a fixed height above the table plane."
     )
     parser.add_argument("--weights", default=default_weights_path(), help="Ultralytics YOLO weights path.")
-    parser.add_argument("--conf", type=float, default=0.25, help="YOLO confidence threshold.")
+    parser.add_argument("--conf", type=float, default=0.1, help="YOLO confidence threshold.")
     parser.add_argument("--class-name", default="", help="Optional object class/object_id to select.")
     parser.add_argument(
         "--calibration",
