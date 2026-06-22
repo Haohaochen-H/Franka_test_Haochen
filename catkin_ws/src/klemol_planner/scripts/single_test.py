@@ -135,20 +135,48 @@ def detection_to_base_point(detection: YoloDetection, panda_transformations: Pan
     return point_base
 
 
-def apply_planar_overrides(
-    point_base: PointWithOrientation,
+def planar_base_point_from_detection(
     detection: YoloDetection,
+    table_z: Optional[float],
+) -> PointWithOrientation:
+    if table_z is None:
+        raise RuntimeError(
+            "Selected object has no 3D position. Pass --table-z to use fixed table-plane Z "
+            "and pixel-to-base XY instead of RealSense depth."
+        )
+    if detection.center_pixel is None:
+        raise RuntimeError("Selected object has no center pixel for pixel XY transform.")
+
+    target_x, target_y = pixel_to_base_xy(detection.center_pixel)
+    return PointWithOrientation(
+        x=target_x,
+        y=target_y,
+        z=target_z_from_table_height(table_z),
+        roll=0.0,
+        pitch=0.0,
+        yaw=target_yaw_from_detection(detection),
+    )
+
+
+def object_point_from_detection(
+    detection: YoloDetection,
+    panda_transformations: PandaTransformations,
     xy_source: str,
     table_z: Optional[float],
 ) -> PointWithOrientation:
     if xy_source == "pixel":
-        if detection.center_pixel is None:
-            raise RuntimeError("Selected object has no center pixel for pixel XY transform.")
-        point_base.x, point_base.y = pixel_to_base_xy(detection.center_pixel)
+        return planar_base_point_from_detection(detection, table_z)
 
+    if detection.position_camera is None:
+        print(
+            "[SINGLE_TEST] selected detection has no 3D position; "
+            "falling back to pixel XY and fixed --table-z."
+        )
+        return planar_base_point_from_detection(detection, table_z)
+
+    point_base = detection_to_base_point(detection, panda_transformations)
     if table_z is not None:
         point_base.z = target_z_from_table_height(table_z)
-
     return point_base
 
 
@@ -245,10 +273,9 @@ def main() -> None:
         output_path=args.debug_image,
         show_image=args.show_image,
     )
-    object_point_base = detection_to_base_point(selected, panda_transformations)
-    object_point_base = apply_planar_overrides(
-        object_point_base,
+    object_point_base = object_point_from_detection(
         detection=selected,
+        panda_transformations=panda_transformations,
         xy_source=args.xy_source,
         table_z=args.table_z,
     )
