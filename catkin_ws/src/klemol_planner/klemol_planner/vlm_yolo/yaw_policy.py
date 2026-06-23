@@ -7,7 +7,7 @@ if TYPE_CHECKING:
     from klemol_planner.vlm_yolo.yolo_module import YoloDetection
 
 
-ROUND_OBJECTS = {"tomato_soup_can", "tomato_can_small"}
+ROUND_OBJECTS = {"tomato_soup_can"}
 LONG_OBJECTS = {"salt_box", "cleaner_bottle"}
 CUBE_OBJECTS = {"orange_cube", "yellow_cube"}
 
