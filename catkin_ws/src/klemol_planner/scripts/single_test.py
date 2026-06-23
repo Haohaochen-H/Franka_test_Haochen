@@ -19,7 +19,12 @@ from klemol_planner.camera_utils.camera_operations import CameraOperations
 from klemol_planner.environment.environment_transformations import PandaTransformations
 from klemol_planner.goals.point_with_orientation import PointWithOrientation
 from klemol_planner.vlm_yolo.pixel_xy_transform import pixel_to_base_xy
-from klemol_planner.vlm_yolo.table_height import TABLE_Z_BASE_OFFSET, target_z_from_table_height
+from klemol_planner.vlm_yolo.table_height import (
+    TABLE_Z_BASE_OFFSET,
+    place_z_for_object,
+    table_z_for_object,
+    target_z_from_table_height,
+)
 from klemol_planner.vlm_yolo.yaw_policy import DEFAULT_GRIPPER_YAW_OFFSET_DEG, target_yaw_from_detection
 from klemol_planner.vlm_yolo.yolo_module import YoloDetection, YoloObjectDetector, print_detections
 from vlm_yolo_dynamic_demo import RRTGroundedExecutor
@@ -256,18 +261,34 @@ def main() -> None:
         show_image=args.show_image,
     )
     gripper_yaw_offset = float(np.deg2rad(args.gripper_yaw_offset_deg))
+    pick_table_z = table_z_for_object(selected.class_name, selected.object_id, override_table_z=args.table_z)
+    place_table_z = args.table_z if args.table_z is not None else place_z_for_object(selected.class_name, selected.object_id)
     object_point_base = detection_to_base_point(selected, panda_transformations, gripper_yaw_offset)
     object_point_base = apply_planar_overrides(
         object_point_base,
         detection=selected,
         xy_source=args.xy_source,
-        table_z=args.table_z,
+        table_z=pick_table_z,
     )
+    place_point_base = PointWithOrientation(
+        object_point_base.x,
+        object_point_base.y,
+        object_point_base.z,
+        object_point_base.roll,
+        object_point_base.pitch,
+        object_point_base.yaw,
+    )
+    if place_table_z is not None:
+        place_point_base.z = target_z_from_table_height(place_table_z)
+    grasp_height_offset = 0.0 if pick_table_z is not None else args.grasp_height_offset
+    place_height_offset = 0.0 if place_table_z is not None else args.grasp_height_offset
     print(f"[SINGLE_TEST] selected={selected.object_id} class={selected.class_name} conf={selected.confidence:.3f}")
     print(f"[SINGLE_TEST] base_point={object_point_base}")
     print(
         f"[SINGLE_TEST] xy_source={args.xy_source} "
         f"table_z={args.table_z} "
+        f"resolved_pick_table_z={pick_table_z} "
+        f"resolved_place_table_z={place_table_z} "
         f"table_offset={TABLE_Z_BASE_OFFSET:.3f} "
         f"gripper_yaw_offset_deg={args.gripper_yaw_offset_deg:.1f}"
     )
@@ -290,7 +311,7 @@ def main() -> None:
         object_id=selected.object_id,
         object_point=object_point_base,
         approach_height=args.approach_height,
-        grasp_height_offset=args.grasp_height_offset,
+        grasp_height_offset=grasp_height_offset,
     )
     if args.skip_place:
         print("[SINGLE_TEST] pick sequence finished; skipping place")
@@ -299,9 +320,9 @@ def main() -> None:
     executor.execute_place(
         object_id=selected.object_id,
         target_id=f"{selected.object_id}_original_position",
-        target_point=object_point_base,
+        target_point=place_point_base,
         approach_height=args.approach_height,
-        place_height_offset=args.grasp_height_offset,
+        place_height_offset=place_height_offset,
     )
     print("[SINGLE_TEST] pick-and-place-back sequence finished")
 
