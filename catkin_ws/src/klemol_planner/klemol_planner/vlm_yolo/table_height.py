@@ -3,7 +3,7 @@ TABLE_Z_BASE_OFFSET = 0.17
 DEFAULT_TABLE_Z_BY_OBJECT = {
     "orange_cube": 0.03,
     "yellow_cube": 0.015,
-    "salt_box": 0.015,
+    "salt_box": 0.03,
 }
 
 DEFAULT_OBJECT_HEIGHT_BY_OBJECT = {
