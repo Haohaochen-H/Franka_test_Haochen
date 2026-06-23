@@ -18,7 +18,12 @@ if str(PACKAGE_ROOT) not in sys.path:
 from klemol_planner.camera_utils.camera_operations import CameraOperations
 from klemol_planner.environment.environment_transformations import PandaTransformations
 from klemol_planner.goals.point_with_orientation import PointWithOrientation
-from klemol_planner.vlm_yolo.box_corner import box_pose_from_image, parse_id_list
+from klemol_planner.vlm_yolo.box_corner import (
+    DEFAULT_BOX_BASE_X,
+    DEFAULT_BOX_BASE_Y,
+    box_pose_from_image,
+    parse_id_list,
+)
 from klemol_planner.vlm_yolo.pixel_xy_transform import pixel_to_base_xy
 from klemol_planner.vlm_yolo.table_height import (
     TABLE_Z_BASE_OFFSET,
@@ -104,10 +109,13 @@ def parse_args() -> argparse.Namespace:
         help="Path for the annotated YOLO debug image. Use 'auto' for a timestamped debug_images file or an empty string to disable saving.",
     )
     parser.add_argument("--show-image", action="store_true", help="Show the annotated YOLO image in an OpenCV window.")
-    parser.add_argument("--box-hover", action="store_true", help="Move above the detected box ArUco coordinate instead of running YOLO pick.")
-    parser.add_argument("--box-id", type=int, default=None, help="Optional ArUco ID for the box marker.")
-    parser.add_argument("--box-table-ids", default="0,1,2,3", help="Comma-separated ArUco IDs for table corner markers.")
-    parser.add_argument("--box-marker-point", default="center", choices=["center", "tl", "tr", "br", "bl"], help="Box marker point to convert to base XY.")
+    parser.add_argument("--box-hover", action="store_true", help="Move above the fixed box coordinate instead of running YOLO pick.")
+    parser.add_argument("--box-detect", action="store_true", help="Detect box ArUco marker instead of using the fixed box coordinate.")
+    parser.add_argument("--box-x", type=float, default=DEFAULT_BOX_BASE_X, help="Fixed box base-frame x coordinate.")
+    parser.add_argument("--box-y", type=float, default=DEFAULT_BOX_BASE_Y, help="Fixed box base-frame y coordinate.")
+    parser.add_argument("--box-id", type=int, default=None, help="Optional ArUco ID for the box marker when --box-detect is used.")
+    parser.add_argument("--box-table-ids", default="0,1,2,3", help="Comma-separated ArUco IDs for table corner markers when --box-detect is used.")
+    parser.add_argument("--box-marker-point", default="center", choices=["center", "tl", "tr", "br", "bl"], help="Box marker point to convert to base XY when --box-detect is used.")
     parser.add_argument("--box-table-z", type=float, default=0.0, help="Box target Z above table plane; base z adds TABLE_Z_BASE_OFFSET.")
     return parser.parse_args()
 
@@ -241,6 +249,32 @@ def main() -> None:
     args = parse_args()
     rospy.init_node("single_test", anonymous=True)
 
+    if args.box_hover and not args.box_detect:
+        box_pose = PointWithOrientation(
+            x=args.box_x,
+            y=args.box_y,
+            z=target_z_from_table_height(args.box_table_z),
+            roll=0.0,
+            pitch=0.0,
+            yaw=0.0,
+        )
+        print(f"[SINGLE_TEST][BOX] coordinate_source=fixed base_pose={box_pose}")
+        print(
+            f"[SINGLE_TEST][BOX] table_offset={TABLE_Z_BASE_OFFSET:.3f} "
+            f"box_table_z={args.box_table_z:.3f} hover_height={args.hover_height:.3f}"
+        )
+        if not args.execute:
+            print("[DRY-RUN] Fixed box coordinate ready. Re-run with --execute --box-hover to move above it.")
+            return
+        executor = RRTGroundedExecutor(args.planner, args.post_processing)
+        executor.execute_hover(
+            object_id="box_fixed",
+            object_point=box_pose,
+            hover_height=args.hover_height,
+        )
+        print("[SINGLE_TEST][BOX] hover finished above fixed box coordinate")
+        return
+
     camera_operations = CameraOperations()
     panda_transformations = PandaTransformations(cam_operations=camera_operations)
     if args.calibration == "fixed":
@@ -253,7 +287,7 @@ def main() -> None:
     color_image, depth_frame = camera_operations.get_image()
     intrinsics = getattr(camera_operations, "color_intrinsics", None)
 
-    if args.box_hover:
+    if args.box_hover and args.box_detect:
         box_id, box_pixel, box_pose, marker_by_id = box_pose_from_image(
             image=color_image,
             table_ids=parse_id_list(args.box_table_ids),
