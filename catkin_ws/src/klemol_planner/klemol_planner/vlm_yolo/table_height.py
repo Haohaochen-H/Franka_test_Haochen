@@ -4,16 +4,19 @@ DEFAULT_TABLE_Z_BY_OBJECT = {
     "orange_cube": 0.03,
     "yellow_cube": 0.015,
     "salt_box": 0.03,
+    "cleaner_bottle": 0.03,
 }
 
 DEFAULT_OBJECT_HEIGHT_BY_OBJECT = {
     "orange_cube": 0.055,
     "yellow_cube": 0.035,
     "salt_box": 0.055,
+    "cleaner_bottle": 0.05,
 }
 
 DEFAULT_PLACE_Z_BY_OBJECT = {
     "salt_box": 0.055,
+    "cleaner_bottle": 0.05,
 }
 
 
