@@ -20,7 +20,7 @@ from klemol_planner.environment.environment_transformations import PandaTransfor
 from klemol_planner.goals.point_with_orientation import PointWithOrientation
 from klemol_planner.vlm_yolo.pixel_xy_transform import pixel_to_base_xy
 from klemol_planner.vlm_yolo.table_height import TABLE_Z_BASE_OFFSET, target_z_from_table_height
-from klemol_planner.vlm_yolo.yaw_policy import target_yaw_from_detection
+from klemol_planner.vlm_yolo.yaw_policy import DEFAULT_GRIPPER_YAW_OFFSET_DEG, target_yaw_from_detection
 from klemol_planner.vlm_yolo.yolo_module import YoloDetection, YoloObjectDetector, print_detections
 from vlm_yolo_dynamic_demo import RRTGroundedExecutor
 
@@ -75,6 +75,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--approach-height", type=float, default=0.12, help="Vertical approach offset in meters.")
     parser.add_argument("--grasp-height-offset", type=float, default=0.02, help="Offset above detected object for grasp.")
     parser.add_argument(
+        "--gripper-yaw-offset-deg",
+        type=float,
+        default=DEFAULT_GRIPPER_YAW_OFFSET_DEG,
+        help="Fixed yaw correction for the gripper in degrees. Use 0 to disable.",
+    )
+    parser.add_argument(
         "--xy-source",
         default="transform",
         choices=["transform", "pixel"],
@@ -114,7 +120,11 @@ def choose_detection(detections: List[YoloDetection], class_name: str = "") -> Y
     return max(detections, key=lambda det: det.confidence)
 
 
-def detection_to_base_point(detection: YoloDetection, panda_transformations: PandaTransformations) -> PointWithOrientation:
+def detection_to_base_point(
+    detection: YoloDetection,
+    panda_transformations: PandaTransformations,
+    gripper_yaw_offset: float,
+) -> PointWithOrientation:
     if detection.position_camera is None:
         raise RuntimeError(
             f"Detection '{detection.object_id}' has no 3D position. "
@@ -131,7 +141,7 @@ def detection_to_base_point(detection: YoloDetection, panda_transformations: Pan
         yaw=0.0,
     )
     point_base = panda_transformations.transform_point(point_camera, "camera", "base")
-    point_base.yaw = target_yaw_from_detection(detection)
+    point_base.yaw = target_yaw_from_detection(detection, gripper_yaw_offset=gripper_yaw_offset)
     return point_base
 
 
@@ -245,7 +255,8 @@ def main() -> None:
         output_path=args.debug_image,
         show_image=args.show_image,
     )
-    object_point_base = detection_to_base_point(selected, panda_transformations)
+    gripper_yaw_offset = float(np.deg2rad(args.gripper_yaw_offset_deg))
+    object_point_base = detection_to_base_point(selected, panda_transformations, gripper_yaw_offset)
     object_point_base = apply_planar_overrides(
         object_point_base,
         detection=selected,
@@ -257,7 +268,8 @@ def main() -> None:
     print(
         f"[SINGLE_TEST] xy_source={args.xy_source} "
         f"table_z={args.table_z} "
-        f"table_offset={TABLE_Z_BASE_OFFSET:.3f}"
+        f"table_offset={TABLE_Z_BASE_OFFSET:.3f} "
+        f"gripper_yaw_offset_deg={args.gripper_yaw_offset_deg:.1f}"
     )
 
     if not args.execute:

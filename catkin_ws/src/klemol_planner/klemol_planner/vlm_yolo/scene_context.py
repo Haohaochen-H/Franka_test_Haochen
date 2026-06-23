@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+import math
 from typing import Any, Optional
 
 from klemol_planner.goals.point_with_orientation import PointWithOrientation
@@ -11,7 +12,7 @@ from klemol_planner.vlm_yolo.table_height import (
     table_z_for_object,
     target_z_from_table_height,
 )
-from klemol_planner.vlm_yolo.yaw_policy import target_yaw_from_detection, yaw_policy_label
+from klemol_planner.vlm_yolo.yaw_policy import DEFAULT_GRIPPER_YAW_OFFSET_DEG, target_yaw_from_detection, yaw_policy_label
 from klemol_planner.vlm_yolo.yolo_module import YoloDetection
 
 
@@ -22,10 +23,11 @@ def build_scene_objects(
     table_z: Optional[float] = None,
     approach_height: float = 0.20,
     grasp_height_offset: float = 0.0,
+    gripper_yaw_offset: float = math.radians(DEFAULT_GRIPPER_YAW_OFFSET_DEG),
 ) -> list[dict[str, Any]]:
     scene_objects = []
     for detection in detections:
-        base_pose = detection_to_base_pose(detection, panda_transformations)
+        base_pose = detection_to_base_pose(detection, panda_transformations, gripper_yaw_offset)
         object_table_z = table_z_for_object(
             class_name=detection.class_name,
             object_id=detection.object_id,
@@ -62,6 +64,7 @@ def build_scene_objects(
                 "position_camera": round_sequence(detection.position_camera),
                 "raw_yaw_rad": round_float(detection.yaw_rad),
                 "yaw_policy": yaw_policy_label(detection),
+                "gripper_yaw_offset_deg": round_float(math.degrees(gripper_yaw_offset)),
                 "base_pose": point_to_dict(base_pose),
                 "pre_grasp_pose": point_to_dict(pre_grasp_pose),
                 "grasp_pose": point_to_dict(grasp_pose),
@@ -74,13 +77,17 @@ def build_scene_objects(
     return scene_objects
 
 
-def detection_to_base_pose(detection: YoloDetection, panda_transformations) -> PointWithOrientation:
+def detection_to_base_pose(
+    detection: YoloDetection,
+    panda_transformations,
+    gripper_yaw_offset: float = math.radians(DEFAULT_GRIPPER_YAW_OFFSET_DEG),
+) -> PointWithOrientation:
     if detection.position_camera is None:
         raise ValueError(f"Detection '{detection.object_id}' has no 3D camera position.")
     x, y, z = detection.position_camera
     point_camera = PointWithOrientation(x=x, y=y, z=z, roll=0.0, pitch=0.0, yaw=0.0)
     point_base = panda_transformations.transform_point(point_camera, "camera", "base")
-    point_base.yaw = target_yaw_from_detection(detection)
+    point_base.yaw = target_yaw_from_detection(detection, gripper_yaw_offset=gripper_yaw_offset)
     return point_base
 
 

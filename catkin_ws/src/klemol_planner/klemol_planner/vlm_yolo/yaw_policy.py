@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 ROUND_OBJECTS = {"tomato_soup_can"}
 LONG_OBJECTS = {"salt_box", "cleaner_bottle"}
 CUBE_OBJECTS = {"orange_cube", "yellow_cube"}
+DEFAULT_GRIPPER_YAW_OFFSET_DEG = -45.0
 
 
 def normalize_name(name: str) -> str:
@@ -20,21 +21,26 @@ def normalize_angle(angle: float) -> float:
     return (angle + math.pi) % (2.0 * math.pi) - math.pi
 
 
-def target_yaw_from_detection(detection: "YoloDetection", default_yaw: float = 0.0) -> float:
+def target_yaw_from_detection(
+    detection: "YoloDetection",
+    default_yaw: float = 0.0,
+    gripper_yaw_offset: float = math.radians(DEFAULT_GRIPPER_YAW_OFFSET_DEG),
+) -> float:
     name = normalize_name(detection.class_name or detection.object_id)
     raw_yaw = normalize_angle(detection.yaw_rad if detection.yaw_rad is not None else default_yaw)
 
     if name in ROUND_OBJECTS:
-        return 0.0
+        return normalize_angle(gripper_yaw_offset)
 
     perpendicular_yaw = normalize_angle(raw_yaw - math.pi * 0.5)
     if name in CUBE_OBJECTS:
-        return raw_yaw if abs(raw_yaw) <= abs(perpendicular_yaw) else perpendicular_yaw
+        target_yaw = raw_yaw if abs(raw_yaw) <= abs(perpendicular_yaw) else perpendicular_yaw
+        return normalize_angle(target_yaw + gripper_yaw_offset)
 
     if name in LONG_OBJECTS:
-        return perpendicular_yaw
+        return normalize_angle(perpendicular_yaw + gripper_yaw_offset)
 
-    return perpendicular_yaw
+    return normalize_angle(perpendicular_yaw + gripper_yaw_offset)
 
 
 def requires_yolo_yaw(detection: "YoloDetection") -> bool:
@@ -45,9 +51,9 @@ def requires_yolo_yaw(detection: "YoloDetection") -> bool:
 def yaw_policy_label(detection: "YoloDetection") -> str:
     name = normalize_name(detection.class_name or detection.object_id)
     if name in ROUND_OBJECTS:
-        return "round_fixed_0"
+        return "round_fixed_0_plus_offset"
     if name in CUBE_OBJECTS:
-        return "cube_min_abs(raw,raw_minus_90deg)"
+        return "cube_min_abs(raw,raw_minus_90deg)_plus_offset"
     if name in LONG_OBJECTS:
-        return "long_raw_minus_90deg"
-    return "default_raw_minus_90deg"
+        return "long_raw_minus_90deg_plus_offset"
+    return "default_raw_minus_90deg_plus_offset"

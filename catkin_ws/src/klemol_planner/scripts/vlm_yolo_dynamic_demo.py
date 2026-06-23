@@ -25,6 +25,7 @@ from klemol_planner.utils.config_loader import load_planner_params
 from klemol_planner.vlm_yolo.grounding_module import GroundedStep
 from klemol_planner.vlm_yolo.scene_context import build_executor_steps, build_scene_objects
 from klemol_planner.vlm_yolo.vlm_module import VlmPlanner
+from klemol_planner.vlm_yolo.yaw_policy import DEFAULT_GRIPPER_YAW_OFFSET_DEG
 from klemol_planner.vlm_yolo.yolo_module import YoloObjectDetector, print_detections
 
 
@@ -69,6 +70,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--approach-height", type=float, default=0.12, help="Vertical approach offset in meters.")
     parser.add_argument("--grasp-height-offset", type=float, default=0.02, help="Offset above detected object for grasp.")
     parser.add_argument("--place-height-offset", type=float, default=0.04, help="Offset above target for place.")
+    parser.add_argument(
+        "--gripper-yaw-offset-deg",
+        type=float,
+        default=DEFAULT_GRIPPER_YAW_OFFSET_DEG,
+        help="Fixed yaw correction for the gripper in degrees. Use 0 to disable.",
+    )
     parser.add_argument("--xy-source", default="pixel", choices=["pixel", "transform"])
     parser.add_argument("--table-z", type=float, default=None)
     return parser.parse_args()
@@ -278,6 +285,7 @@ def main() -> None:
         table_z=args.table_z,
         approach_height=args.approach_height,
         grasp_height_offset=args.grasp_height_offset,
+        gripper_yaw_offset=float(np.deg2rad(args.gripper_yaw_offset_deg)),
     )
 
     vlm = VlmPlanner(
