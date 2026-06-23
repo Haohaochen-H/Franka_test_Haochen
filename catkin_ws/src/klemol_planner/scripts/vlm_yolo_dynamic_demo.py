@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import math
 from pathlib import Path
 import sys
 from typing import Optional
@@ -231,6 +232,34 @@ class RRTGroundedExecutor:
         retreat.z += approach_height
         self._move_to_pose_sequence(goal=retreat)
 
+    def _prefer_nearest_gripper_yaw(
+        self,
+        goal: PointWithOrientation,
+        post_goal_path: Optional[list[PointWithOrientation]],
+        reference_yaw: float,
+    ) -> None:
+        adjusted_yaw = self._nearest_gripper_equivalent_yaw(goal.yaw, reference_yaw)
+        yaw_delta = self._normalize_angle(adjusted_yaw - goal.yaw)
+        if abs(yaw_delta) > math.radians(1.0):
+            rospy.loginfo(
+                f"[VLM-YOLO] using 180deg-equivalent gripper yaw: "
+                f"{math.degrees(goal.yaw):.1f} -> {math.degrees(adjusted_yaw):.1f} deg"
+            )
+        goal.yaw = adjusted_yaw
+        if post_goal_path:
+            for waypoint in post_goal_path:
+                waypoint.yaw = self._normalize_angle(waypoint.yaw + yaw_delta)
+
+    @staticmethod
+    def _nearest_gripper_equivalent_yaw(target_yaw: float, reference_yaw: float) -> float:
+        candidates = [target_yaw + k * math.pi for k in range(-2, 3)]
+        nearest = min(candidates, key=lambda yaw: abs(RRTGroundedExecutor._normalize_angle(yaw - reference_yaw)))
+        return RRTGroundedExecutor._normalize_angle(nearest)
+
+    @staticmethod
+    def _normalize_angle(angle: float) -> float:
+        return (angle + math.pi) % (2.0 * math.pi) - math.pi
+
     def _move_to_pose_sequence(
         self,
         goal: PointWithOrientation,
@@ -238,6 +267,7 @@ class RRTGroundedExecutor:
     ) -> None:
         current_config = np.array(self.robot_model.get_current_joint_values())
         current_pose = self.robot_model.fk(config=current_config)
+        self._prefer_nearest_gripper_yaw(goal, post_goal_path, current_pose.yaw)
         pre_start_path = []
         if current_pose.z < 0.10:
             wp = copy.deepcopy(current_pose)
