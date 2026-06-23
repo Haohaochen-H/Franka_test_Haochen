@@ -22,6 +22,7 @@ enable_generated_ros_modules(PACKAGE_ROOT)
 from klemol_planner.camera_utils.camera_operations import CameraOperations
 from klemol_planner.environment.environment_transformations import PandaTransformations
 from klemol_planner.srv import GenerateVlmPlan, GenerateVlmPlanResponse
+from klemol_planner.vlm_yolo.box_corner import DEFAULT_BOX_BASE_X, DEFAULT_BOX_BASE_Y, build_fixed_box_scene_object
 from klemol_planner.vlm_yolo.scene_context import build_executor_steps, build_scene_objects, detections_to_jsonable
 from klemol_planner.vlm_yolo.vlm_module import VlmPlanner
 from klemol_planner.vlm_yolo.yolo_module import YoloObjectDetector
@@ -49,6 +50,10 @@ class Ros1VlmPlannerNode:
         self.approach_height = float(rospy.get_param("~approach_height", 0.20))
         self.grasp_height_offset = float(rospy.get_param("~grasp_height_offset", 0.0))
         self.demo_mode = bool(rospy.get_param("~demo_mode", False))
+        self.box_enabled = bool(rospy.get_param("~box_enabled", True))
+        self.box_x = float(rospy.get_param("~box_x", DEFAULT_BOX_BASE_X))
+        self.box_y = float(rospy.get_param("~box_y", DEFAULT_BOX_BASE_Y))
+        self.box_table_z = float(rospy.get_param("~box_table_z", 0.0))
 
         rospy.loginfo("[VLM_NODE] loading camera, YOLO, and VLM clients")
         self.camera_operations = CameraOperations()
@@ -107,6 +112,14 @@ class Ros1VlmPlannerNode:
                 approach_height=self.approach_height,
                 grasp_height_offset=self.grasp_height_offset,
             )
+            if self.box_enabled:
+                box_scene_object = build_fixed_box_scene_object(
+                    x=self.box_x,
+                    y=self.box_y,
+                    table_z=self.box_table_z,
+                )
+                scene_objects.append(box_scene_object)
+                rospy.loginfo("[VLM_NODE] fixed box target: base_pose=%s", box_scene_object.get("base_pose"))
 
             if self.demo_mode:
                 plan = self._demo_plan(scene_objects)

@@ -16,6 +16,10 @@ from klemol_planner.vlm_yolo.yaw_policy import DEFAULT_GRIPPER_YAW_OFFSET_DEG, t
 from klemol_planner.vlm_yolo.yolo_module import YoloDetection
 
 
+TABLE_CENTER_BASE_X = 0.3900
+TABLE_CENTER_BASE_Y = -0.0048
+
+
 def build_scene_objects(
     detections: list[YoloDetection],
     panda_transformations,
@@ -74,7 +78,32 @@ def build_scene_objects(
                 "table_offset": round_float(TABLE_Z_BASE_OFFSET),
             }
         )
+    scene_objects.append(build_table_center_scene_object())
     return scene_objects
+
+
+def build_table_center_scene_object() -> dict[str, Any]:
+    base_pose = {
+        "x": round_float(TABLE_CENTER_BASE_X),
+        "y": round_float(TABLE_CENTER_BASE_Y),
+        "z": round_float(TABLE_Z_BASE_OFFSET),
+        "roll": 0.0,
+        "pitch": 0.0,
+        "yaw": 0.0,
+    }
+    return {
+        "object_id": "table_center",
+        "class_name": "table_center",
+        "scene_role": "place_location",
+        "place_mode": "on_table",
+        "base_pose": base_pose,
+        "pre_grasp_pose": base_pose,
+        "grasp_pose": base_pose,
+        "lift_pose": base_pose,
+        "table_z": 0.0,
+        "object_height": 0.0,
+        "table_offset": round_float(TABLE_Z_BASE_OFFSET),
+    }
 
 
 def detection_to_base_pose(
@@ -160,7 +189,8 @@ def build_executor_steps(plan: list[dict[str, Any]], scene_objects: list[dict[st
         elif action == "place":
             target = scene_by_name[normalize_name(step["target_object"])]
             target_point = dict(target["base_pose"])
-            target_point["z"] = round_float(float(target_point["z"]) + held_object_height)
+            stacking_height_offset = 0.0 if target.get("place_mode") in {"inside", "on_table", "location"} else held_object_height
+            target_point["z"] = round_float(float(target_point["z"]) + stacking_height_offset)
             steps.append(
                 {
                     "skill": "place",
@@ -168,7 +198,8 @@ def build_executor_steps(plan: list[dict[str, Any]], scene_objects: list[dict[st
                     "target_id": target["object_id"],
                     "object_point_base": held_object_point,
                     "target_point_base": target_point,
-                    "stacking_height_offset": round_float(held_object_height),
+                    "stacking_height_offset": round_float(stacking_height_offset),
+                    "place_mode": target.get("place_mode", "on_top"),
                 }
             )
             held_object_id = ""

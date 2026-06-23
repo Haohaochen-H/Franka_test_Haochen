@@ -32,19 +32,24 @@ Executor action space:
 - Do not output intermediate Move/Gripper waypoints.
 - Do not output raw coordinates in the plan. Coordinates are provided in scene_objects and will be attached by the executor after your plan.
 
-Available task object classes:
-Cleaner_bottle, Salt_box, tomato_soup_can, Orange_cube, Yellow_cube.
+Available task object classes and locations:
+Cleaner_bottle, Salt_box, tomato_soup_can, Orange_cube, Yellow_cube, box, table_center.
 
 Object naming:
 - Use only object_id values from the scene objects list.
 - If the instruction uses a class name, map it to the matching visible object_id.
 - Do not invent objects, locations, bins, boxes, or unprovided coordinates.
-- If the instruction asks for an object that is not in the scene objects list, do not produce a plan.
+- A box/container is valid only when scene_objects contains object_id "box".
+- If the instruction asks to put an object into a box, bin, or container, map the place target to object_id "box" when it is present.
+- If the instruction asks to take, remove, or move an object out of a box/container and no explicit destination is given, place it at object_id "table_center".
+- If the instruction asks for an object or target location that is not in the scene objects list, do not produce a plan.
 - If the instruction is ambiguous, impossible, unsafe, or any required object lacks coordinates, do not produce a plan.
 
 Executor input convention:
 - Pick target uses scene_objects[target].base_pose as object_point_base.
-- Place target uses scene_objects[target_object].base_pose plus the picked object's object_height as target_point_base.z, so stacking does not press into the support object.
+- Place target normally uses scene_objects[target_object].base_pose plus the picked object's object_height as target_point_base.z, so stacking does not press into the support object.
+- If target_object is a container/box with place_mode "inside", Place uses the box base_pose directly as the target coordinate.
+- If target_object is a place location such as table_center with place_mode "on_table", Place uses that base_pose directly as the target coordinate.
 - The executor will expand each Pick/Place into all required intermediate waypoints.
 
 Planner-critic mechanism:
@@ -74,11 +79,11 @@ Evaluation standards:
 1. Action order: every Pick must be followed by a Place before another Pick.
 2. Holding state: the robot cannot Pick while already holding an object and cannot Place before Pick.
 3. Object validity: every Pick target and Place target_object must be from the scene objects list.
-4. Task completion: the final sequence must satisfy the human instruction.
+4. Task completion: the final sequence must satisfy the human instruction. If the instruction asks to put an object into a box/container, the Place target_object must be "box" when scene_objects contains it. If the instruction asks to take/remove an object out of a box/container without an explicit destination, the Place target_object must be "table_center".
 5. Space constraints: if the target object is visibly occupied or blocked by another task object, the blocking object should be moved first.
 
-Available task object classes:
-Cleaner_bottle, Salt_box, tomato_soup_can, Orange_cube, Yellow_cube.
+Available task object classes and locations:
+Cleaner_bottle, Salt_box, tomato_soup_can, Orange_cube, Yellow_cube, box, table_center.
 
 Response format:
 Return JSON only:
@@ -339,9 +344,16 @@ def normalize_plan(
         raise ValueError("VLM plan must be a list or an object with key 'plan'.")
 
     valid_names = None
-    if detections is not None:
-        valid_names = {det.object_id for det in detections}
-        valid_names.update(det.class_name for det in detections)
+    if detections is not None or scene_objects is not None:
+        valid_names = set()
+        if detections is not None:
+            valid_names.update(det.object_id for det in detections)
+            valid_names.update(det.class_name for det in detections)
+        if scene_objects is not None:
+            for obj in scene_objects:
+                valid_names.add(str(obj.get("object_id", "")))
+                valid_names.add(str(obj.get("class_name", "")))
+        valid_names.discard("")
 
     normalized: list[dict[str, Any]] = []
     holding = False

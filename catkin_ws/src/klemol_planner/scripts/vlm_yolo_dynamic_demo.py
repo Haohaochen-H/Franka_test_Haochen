@@ -23,6 +23,13 @@ from klemol_planner.goals.point_with_orientation import PointWithOrientation
 from klemol_planner.planners.rrt_with_connecting import RRTWithConnectingPlanner
 from klemol_planner.post_processing.path_post_processing import PathPostProcessing
 from klemol_planner.utils.config_loader import load_planner_params
+from klemol_planner.vlm_yolo.box_corner import (
+    DEFAULT_BOX_BASE_X,
+    DEFAULT_BOX_BASE_Y,
+    build_box_scene_object,
+    build_fixed_box_scene_object,
+    parse_id_list,
+)
 from klemol_planner.vlm_yolo.grounding_module import GroundedStep
 from klemol_planner.vlm_yolo.scene_context import build_executor_steps, build_scene_objects
 from klemol_planner.vlm_yolo.vlm_module import VlmPlanner
@@ -79,6 +86,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--xy-source", default="pixel", choices=["pixel", "transform"])
     parser.add_argument("--table-z", type=float, default=None)
+    parser.add_argument("--box-enabled", action="store_true", help="Add fixed scene object_id=box target.")
+    parser.add_argument("--box-detect", action="store_true", help="Detect box ArUco marker instead of using the fixed box coordinate.")
+    parser.add_argument("--box-x", type=float, default=DEFAULT_BOX_BASE_X, help="Fixed box base-frame x coordinate.")
+    parser.add_argument("--box-y", type=float, default=DEFAULT_BOX_BASE_Y, help="Fixed box base-frame y coordinate.")
+    parser.add_argument("--box-id", type=int, default=None, help="Optional ArUco ID for the box marker when --box-detect is used.")
+    parser.add_argument("--box-table-ids", default="0,1,2,3", help="Comma-separated ArUco IDs for table corner markers when --box-detect is used.")
+    parser.add_argument("--box-marker-point", default="center", choices=["center", "tl", "tr", "br", "bl"], help="Box marker point to convert to base XY when --box-detect is used.")
+    parser.add_argument("--box-table-z", type=float, default=0.0, help="Box target Z above table plane.")
     return parser.parse_args()
 
 
@@ -317,6 +332,23 @@ def main() -> None:
         grasp_height_offset=args.grasp_height_offset,
         gripper_yaw_offset=float(np.deg2rad(args.gripper_yaw_offset_deg)),
     )
+    if args.box_enabled:
+        if args.box_detect:
+            box_scene_object = build_box_scene_object(
+                image=color_image,
+                table_ids=parse_id_list(args.box_table_ids),
+                box_id=args.box_id,
+                marker_point=args.box_marker_point,
+                table_z=args.box_table_z,
+            )
+        else:
+            box_scene_object = build_fixed_box_scene_object(
+                x=args.box_x,
+                y=args.box_y,
+                table_z=args.box_table_z,
+            )
+        scene_objects.append(box_scene_object)
+        print(f"[BOX_TARGET] {box_scene_object}")
 
     vlm = VlmPlanner(
         model_name=args.model_name,

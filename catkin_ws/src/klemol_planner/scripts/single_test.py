@@ -18,6 +18,7 @@ if str(PACKAGE_ROOT) not in sys.path:
 from klemol_planner.camera_utils.camera_operations import CameraOperations
 from klemol_planner.environment.environment_transformations import PandaTransformations
 from klemol_planner.goals.point_with_orientation import PointWithOrientation
+from klemol_planner.vlm_yolo.box_corner import box_pose_from_image, parse_id_list
 from klemol_planner.vlm_yolo.pixel_xy_transform import pixel_to_base_xy
 from klemol_planner.vlm_yolo.table_height import (
     TABLE_Z_BASE_OFFSET,
@@ -103,6 +104,11 @@ def parse_args() -> argparse.Namespace:
         help="Path for the annotated YOLO debug image. Use 'auto' for a timestamped debug_images file or an empty string to disable saving.",
     )
     parser.add_argument("--show-image", action="store_true", help="Show the annotated YOLO image in an OpenCV window.")
+    parser.add_argument("--box-hover", action="store_true", help="Move above the detected box ArUco coordinate instead of running YOLO pick.")
+    parser.add_argument("--box-id", type=int, default=None, help="Optional ArUco ID for the box marker.")
+    parser.add_argument("--box-table-ids", default="0,1,2,3", help="Comma-separated ArUco IDs for table corner markers.")
+    parser.add_argument("--box-marker-point", default="center", choices=["center", "tl", "tr", "br", "bl"], help="Box marker point to convert to base XY.")
+    parser.add_argument("--box-table-z", type=float, default=0.0, help="Box target Z above table plane; base z adds TABLE_Z_BASE_OFFSET.")
     return parser.parse_args()
 
 
@@ -246,6 +252,33 @@ def main() -> None:
 
     color_image, depth_frame = camera_operations.get_image()
     intrinsics = getattr(camera_operations, "color_intrinsics", None)
+
+    if args.box_hover:
+        box_id, box_pixel, box_pose, marker_by_id = box_pose_from_image(
+            image=color_image,
+            table_ids=parse_id_list(args.box_table_ids),
+            box_id=args.box_id,
+            marker_point=args.box_marker_point,
+            table_z=args.box_table_z,
+        )
+        print(f"[SINGLE_TEST][BOX] detected_marker_ids={sorted(marker_by_id.keys())}")
+        print(f"[SINGLE_TEST][BOX] selected_id={box_id} marker_point={args.box_marker_point} pixel={box_pixel}")
+        print(f"[SINGLE_TEST][BOX] base_pose={box_pose}")
+        print(
+            f"[SINGLE_TEST][BOX] table_offset={TABLE_Z_BASE_OFFSET:.3f} "
+            f"box_table_z={args.box_table_z:.3f} hover_height={args.hover_height:.3f}"
+        )
+        if not args.execute:
+            print("[DRY-RUN] Box coordinate grounding succeeded. Re-run with --execute --box-hover to move above it.")
+            return
+        executor = RRTGroundedExecutor(args.planner, args.post_processing)
+        executor.execute_hover(
+            object_id=f"box_marker_{box_id}",
+            object_point=box_pose,
+            hover_height=args.hover_height,
+        )
+        print(f"[SINGLE_TEST][BOX] hover finished above box marker {box_id}")
+        return
 
     detector = YoloObjectDetector(weights_path=args.weights, confidence_threshold=args.conf)
     detections = detector.detect(color_image=color_image, depth_frame=depth_frame, intrinsics=intrinsics)
