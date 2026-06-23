@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Iterable, Optional
 
+import math
+
 import cv2
 import numpy as np
 
@@ -14,6 +16,9 @@ from klemol_planner.vlm_yolo.table_height import TABLE_Z_BASE_OFFSET, target_z_f
 DEFAULT_BOX_BASE_X = 0.28536411992536775
 DEFAULT_BOX_BASE_Y = 0.33404660024272576
 DEFAULT_BOX_TABLE_Z = 0.0
+DEFAULT_TOP_DOWN_ROLL = -math.pi
+DEFAULT_TOP_DOWN_PITCH = 0.0
+DEFAULT_TOP_DOWN_YAW = 0.0
 MARKER_POINT_INDEX = {
     "tl": 0,
     "tr": 1,
@@ -100,9 +105,9 @@ def box_pose_from_image(
         x=base_x,
         y=base_y,
         z=target_z_from_table_height(table_z),
-        roll=0.0,
-        pitch=0.0,
-        yaw=0.0,
+        roll=DEFAULT_TOP_DOWN_ROLL,
+        pitch=DEFAULT_TOP_DOWN_PITCH,
+        yaw=DEFAULT_TOP_DOWN_YAW,
     )
     return selected_id, pixel, pose, marker_by_id
 
@@ -151,9 +156,9 @@ def build_fixed_box_scene_object(
         x=float(x),
         y=float(y),
         z=target_z_from_table_height(float(table_z)),
-        roll=0.0,
-        pitch=0.0,
-        yaw=0.0,
+        roll=DEFAULT_TOP_DOWN_ROLL,
+        pitch=DEFAULT_TOP_DOWN_PITCH,
+        yaw=DEFAULT_TOP_DOWN_YAW,
     )
     base_pose = point_to_dict(pose)
     return {

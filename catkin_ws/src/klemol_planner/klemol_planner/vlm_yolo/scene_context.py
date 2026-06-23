@@ -5,6 +5,7 @@ import math
 from typing import Any, Optional
 
 from klemol_planner.goals.point_with_orientation import PointWithOrientation
+from klemol_planner.vlm_yolo.box_corner import DEFAULT_TOP_DOWN_PITCH, DEFAULT_TOP_DOWN_ROLL, DEFAULT_TOP_DOWN_YAW
 from klemol_planner.vlm_yolo.pixel_xy_transform import pixel_to_base_xy
 from klemol_planner.vlm_yolo.table_height import (
     TABLE_Z_BASE_OFFSET,
@@ -87,9 +88,9 @@ def build_table_center_scene_object() -> dict[str, Any]:
         "x": round_float(TABLE_CENTER_BASE_X),
         "y": round_float(TABLE_CENTER_BASE_Y),
         "z": round_float(TABLE_Z_BASE_OFFSET),
-        "roll": 0.0,
-        "pitch": 0.0,
-        "yaw": 0.0,
+        "roll": round_float(DEFAULT_TOP_DOWN_ROLL),
+        "pitch": round_float(DEFAULT_TOP_DOWN_PITCH),
+        "yaw": round_float(DEFAULT_TOP_DOWN_YAW),
     }
     return {
         "object_id": "table_center",

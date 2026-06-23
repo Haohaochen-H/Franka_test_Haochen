@@ -21,6 +21,9 @@ from klemol_planner.goals.point_with_orientation import PointWithOrientation
 from klemol_planner.vlm_yolo.box_corner import (
     DEFAULT_BOX_BASE_X,
     DEFAULT_BOX_BASE_Y,
+    DEFAULT_TOP_DOWN_PITCH,
+    DEFAULT_TOP_DOWN_ROLL,
+    DEFAULT_TOP_DOWN_YAW,
     box_pose_from_image,
     parse_id_list,
 )
@@ -254,9 +257,9 @@ def main() -> None:
             x=args.box_x,
             y=args.box_y,
             z=target_z_from_table_height(args.box_table_z),
-            roll=0.0,
-            pitch=0.0,
-            yaw=0.0,
+            roll=DEFAULT_TOP_DOWN_ROLL,
+            pitch=DEFAULT_TOP_DOWN_PITCH,
+            yaw=DEFAULT_TOP_DOWN_YAW,
         )
         print(f"[SINGLE_TEST][BOX] coordinate_source=fixed base_pose={box_pose}")
         print(
