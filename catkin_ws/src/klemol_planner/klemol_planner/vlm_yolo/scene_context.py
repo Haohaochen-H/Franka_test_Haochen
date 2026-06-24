@@ -19,6 +19,7 @@ from klemol_planner.vlm_yolo.yolo_module import YoloDetection
 
 TABLE_CENTER_BASE_X = 0.3900
 TABLE_CENTER_BASE_Y = -0.0048
+EXECUTOR_Z_SAFETY_LIFT = 0.01
 
 
 def build_scene_objects(
@@ -191,7 +192,8 @@ def build_executor_steps(plan: list[dict[str, Any]], scene_objects: list[dict[st
         if action == "pick":
             source = scene_by_name[normalize_name(step["target"])]
             held_object_id = source["object_id"]
-            held_object_point = source["base_pose"]
+            held_object_point = dict(source["base_pose"])
+            held_object_point["z"] = round_float(float(held_object_point["z"]) + EXECUTOR_Z_SAFETY_LIFT)
             held_object_height = float(source.get("object_height") or 0.0)
             steps.append(
                 {
@@ -206,7 +208,7 @@ def build_executor_steps(plan: list[dict[str, Any]], scene_objects: list[dict[st
             target = scene_by_name[normalize_name(step["target_object"])]
             target_point = dict(target["base_pose"])
             stacking_height_offset = 0.0 if target.get("place_mode") in {"inside", "on_table", "location"} else held_object_height
-            target_point["z"] = round_float(float(target_point["z"]) + stacking_height_offset)
+            target_point["z"] = round_float(float(target_point["z"]) + stacking_height_offset + EXECUTOR_Z_SAFETY_LIFT)
             steps.append(
                 {
                     "skill": "place",
@@ -228,3 +230,4 @@ def build_executor_steps(plan: list[dict[str, Any]], scene_objects: list[dict[st
 
 def normalize_name(name: str) -> str:
     return str(name).strip().lower().replace(" ", "_").replace("-", "_")
+
