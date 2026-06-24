@@ -44,6 +44,7 @@ CRITIC_SYSTEM_PROMPT = """Critique the proposed Pick/Place plan for a Franka Pan
 Use only facts explicitly present in scene_objects, the human instruction, and the planner action sequence. Do not infer hidden containers, occupancy, blockage, or spatial relations not stated there.
 Pass the plan if object_id targets exist, each Pick is followed by its intended Place, holding state is valid, and the plan satisfies every subtask in the instruction.
 For compound instructions, require one Pick/Place pair per moved object.
+The action schema has no source field. For "take object out of box", Pick target="object" is correct; the following Place target_object must be "table_center" unless another destination is specified.
 If putting into a box/container, Place target_object should be "box". If taking out of a box/container with no destination, Place target_object should be "table_center". If putting one object on another object, Place target_object should be the support object's object_id.
 Return JSON only: {"pass":true,"feedback":"The plan is feasible."} or {"pass":false,"feedback":"specific correction"}.
 """
@@ -121,6 +122,7 @@ class VlmPlanner:
                     history.append(CriticRecord(iteration, planner_raw, None, None, False, planner_error))
                     return VlmPlannerResult(plan=[], success=False, feedback=planner_error, history=history)
                 plan = normalize_plan(planner_data, detections, scene_objects)
+                plan = repair_take_out_of_box_plan(instruction, plan, scene_objects)
                 plan_json = json.dumps(plan, ensure_ascii=False)
                 previous_plan_json = plan_json
                 last_valid_plan = plan
@@ -309,6 +311,47 @@ def extract_json(text: str) -> Any:
     return json.loads(match.group(1))
 
 
+def repair_take_out_of_box_plan(
+    instruction: str,
+    plan: list[dict[str, Any]],
+    scene_objects: Optional[list[dict[str, Any]]] = None,
+) -> list[dict[str, Any]]:
+    text = instruction.lower()
+    if "box" not in text or "out of" not in text or not any(word in text for word in ("take", "remove")):
+        return plan
+    if not any(normalize_identifier(step.get("target_object", "")) == "table_center" for step in plan):
+        table_center_available = any(
+            normalize_identifier(obj.get("object_id", "")) == "table_center"
+            or normalize_identifier(obj.get("class_name", "")) == "table_center"
+            for obj in (scene_objects or [])
+        )
+        if not table_center_available:
+            return plan
+    object_names = []
+    for obj in scene_objects or []:
+        object_id = str(obj.get("object_id", "")).strip()
+        class_name = str(obj.get("class_name", "")).strip()
+        for name in (object_id, class_name):
+            key = normalize_identifier(name)
+            if key and key not in {"box", "table_center"} and key.replace("_", " ") in text:
+                object_names.append(key)
+    repaired = [dict(step) for step in plan]
+    for index, step in enumerate(repaired[:-1]):
+        if step.get("action") != "Pick":
+            continue
+        picked = normalize_identifier(step.get("target", ""))
+        if object_names and picked not in object_names:
+            continue
+        next_step = repaired[index + 1]
+        if next_step.get("action") == "Place" and normalize_identifier(next_step.get("target_object", "")) == "box":
+            next_step["target_object"] = "table_center"
+            return repaired
+    return repaired
+
+
+def normalize_identifier(value: Any) -> str:
+    return str(value).strip().lower().replace("-", "_").replace(" ", "_")
+
 def normalize_plan(
     data: Any,
     detections: Optional[list[YoloDetection]] = None,
@@ -423,4 +466,5 @@ def parse_critic_response(text: str) -> dict[str, Any]:
     if not feedback:
         feedback = "The plan is feasible." if bool(data.get("pass", False)) else "No correction was provided."
     return {"pass": bool(data.get("pass", False)), "feedback": feedback}
+
 
