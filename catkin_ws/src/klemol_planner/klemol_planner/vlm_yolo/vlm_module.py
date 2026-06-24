@@ -22,86 +22,25 @@ TASK_OBJECTS = [
 ]
 
 
-PLANNER_SYSTEM_PROMPT = """You are the planning VLM for a Franka Panda robot in a tabletop pick-and-place task.
-Observe the current camera image, YOLO detections, and base-frame object coordinates, then convert the human instruction into an executor-level robot plan.
-
-Executor action space:
-- You may only use "Pick" and "Place".
-- A Pick step means: move to the object's executor pose, grasp it, and lift it. The executor will generate approach/grasp/lift waypoints.
-- A Place step means: move the currently held object to the target object's executor pose, release it, and retreat. The executor will generate approach/place/retreat waypoints.
-- Do not output intermediate Move/Gripper waypoints.
-- Do not output raw coordinates in the plan. Coordinates are provided in scene_objects and will be attached by the executor after your plan.
-
-Available task object classes and locations:
-Cleaner_bottle, Salt_box, tomato_soup_can, Orange_cube, Yellow_cube, box, table_center.
-
-Object naming:
-- Use only object_id values from the scene objects list.
-- If the instruction uses a class name, map it to the matching visible object_id.
-- Do not invent objects, locations, bins, boxes, or unprovided coordinates.
-- A box/container is valid only when scene_objects contains object_id "box".
-- If the instruction asks to put an object into a box, bin, or container, map the place target to object_id "box" when it is present.
-- If the instruction asks to take, remove, or move an object out of a box/container and no explicit destination is given, place it at object_id "table_center".
-- If the instruction asks for an object or target location that is not in the scene objects list, do not produce a plan.
-- If the instruction is ambiguous, impossible, unsafe, or any required object lacks coordinates, do not produce a plan.
-
-Executor input convention:
-- Pick target uses scene_objects[target].base_pose as object_point_base.
-- Place target normally uses scene_objects[target_object].base_pose plus the picked object's object_height as target_point_base.z, so stacking does not press into the support object.
-- If target_object is a container/box with place_mode "inside", Place uses the box base_pose directly as the target coordinate.
-- If target_object is a place location such as table_center with place_mode "on_table", Place uses that base_pose directly as the target coordinate.
-- The executor will expand each Pick/Place into all required intermediate waypoints.
-
-Planner-critic mechanism:
-Another VLM will act as a critic. If critic feedback is provided, revise the plan according to that feedback.
-
-Output format:
-If the task is feasible, return JSON only, with exactly this shape:
-{
-  "plan": [
-    {"order": "01", "action": "Pick", "target": "Orange_cube"},
-    {"order": "02", "action": "Place", "target_object": "Yellow_cube"}
-  ]
-}
-
-If the task cannot be completed, return JSON only, with exactly this shape:
-{
-  "error": "Missing required object: object_name"
-}
+PLANNER_SYSTEM_PROMPT = """Plan tabletop pick-and-place for a Franka Panda robot.
+Use only executor actions "Pick" and "Place"; do not output raw coordinates or low-level Move/Gripper steps.
+Use only object_id values from scene_objects.
+Valid classes/locations: Cleaner_bottle, Salt_box, tomato_soup_can, Orange_cube, Yellow_cube, box, table_center.
+Rules:
+- Map class names in the instruction to matching visible object_id values.
+- If putting an object into a box/bin/container, Place target_object must be "box" when present.
+- If taking/removing an object out of a box/container with no destination, Place target_object must be "table_center".
+- Do not invent objects or locations. If required targets are missing, return an error.
+- place_mode="inside" or "on_table" means the executor uses that target base_pose directly.
+Return JSON only: {"plan":[{"order":"01","action":"Pick","target":"object_id"},{"order":"02","action":"Place","target_object":"object_id"}]}.
+If impossible, return JSON only: {"error":"reason"}.
 """
 
 
-CRITIC_SYSTEM_PROMPT = """You are the critic VLM for a Franka Panda robot.
-Observe the current camera image, YOLO detections, base-frame object coordinates, the human instruction, and the planner executor-level action sequence.
-Evaluate whether the sequence is physically feasible, safe, and logically correct for this tabletop task.
-
-Evaluation standards:
-1. Action order: every Pick must be followed by a Place before another Pick.
-2. Holding state: the robot cannot Pick while already holding an object and cannot Place before Pick.
-3. Object validity: every Pick target and Place target_object must be from the scene objects list.
-4. Task completion: the final sequence must satisfy the human instruction. If the instruction asks to put an object into a box/container, the Place target_object must be "box" when scene_objects contains it. If the instruction asks to take/remove an object out of a box/container without an explicit destination, the Place target_object must be "table_center".
-5. Space constraints: if the target object is visibly occupied or blocked by another task object, the blocking object should be moved first.
-
-Available task object classes and locations:
-Cleaner_bottle, Salt_box, tomato_soup_can, Orange_cube, Yellow_cube, box, table_center.
-
-Response format:
-Return JSON only:
-{
-  "pass": true,
-  "feedback": "The plan is feasible."
-}
-or
-{
-  "pass": false,
-  "feedback": "Concrete correction for the planner."
-}
-
-If the planner returned an error because required objects are missing or the task is impossible, pass the error through:
-{
-  "pass": false,
-  "feedback": "Planner correctly stopped: Missing required object: object_name"
-}
+CRITIC_SYSTEM_PROMPT = """Critique the proposed Pick/Place plan for a Franka Panda tabletop task.
+Check: valid object_id targets from scene_objects, Pick before Place, no Pick while holding, no Place while empty, and task satisfaction.
+If putting into a box/container, Place target_object should be "box". If taking out of a box/container with no destination, Place target_object should be "table_center".
+Return JSON only: {"pass":true,"feedback":"The plan is feasible."} or {"pass":false,"feedback":"specific correction"}.
 """
 
 
@@ -198,13 +137,30 @@ class VlmPlanner:
     def _visible_objects_json(self, detections: list[YoloDetection]) -> str:
         visible = []
         for det in detections:
-            data = asdict(det)
-            data["position_camera"] = det.position_camera
-            visible.append(data)
-        return json.dumps(visible, ensure_ascii=False)
+            item = {
+                "object_id": det.object_id,
+                "class_name": det.class_name,
+                "confidence": round_float(det.confidence),
+            }
+            if det.center_pixel is not None:
+                item["center_pixel"] = [int(det.center_pixel[0]), int(det.center_pixel[1])]
+            visible.append(item)
+        return json.dumps(visible, ensure_ascii=False, separators=(",", ":"))
 
     def _scene_objects_json(self, scene_objects: list[dict[str, Any]]) -> str:
-        return json.dumps(scene_objects, ensure_ascii=False)
+        compact = []
+        for obj in scene_objects:
+            item = {
+                "object_id": obj.get("object_id"),
+                "class_name": obj.get("class_name"),
+                "base_pose": compact_pose(obj.get("base_pose")),
+            }
+            for key in ("scene_role", "place_mode", "object_height", "table_z"):
+                value = obj.get(key)
+                if value not in (None, ""):
+                    item[key] = round_float(value) if isinstance(value, (int, float)) else value
+            compact.append(item)
+        return json.dumps(compact, ensure_ascii=False, separators=(",", ":"))
 
     def _build_planner_prompt(
         self,
@@ -312,6 +268,21 @@ class VlmPlanner:
             data = json.loads(response.read().decode("utf-8"))
         return str(data.get("response", ""))
 
+
+def round_float(value: Any, digits: int = 4):
+    if value is None:
+        return None
+    return round(float(value), digits)
+
+
+def compact_pose(value: Any) -> Optional[dict[str, float]]:
+    if not isinstance(value, dict):
+        return None
+    return {
+        key: round_float(value[key])
+        for key in ("x", "y", "z", "roll", "pitch", "yaw")
+        if key in value
+    }
 
 def _encode_image_base64(image: np.ndarray) -> str:
     success, encoded = cv2.imencode(".jpg", image)
