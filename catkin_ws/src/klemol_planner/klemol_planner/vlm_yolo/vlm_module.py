@@ -28,10 +28,13 @@ Use only object_id values from scene_objects.
 Valid classes/locations: Cleaner_bottle, Salt_box, tomato_soup_can, Orange_cube, Yellow_cube, box, table_center.
 Rules:
 - Map class names in the instruction to matching visible object_id values.
+- Complete every requested subtask in the instruction, in order. For two requested moves, output four actions: Pick, Place, Pick, Place.
+- If taking/removing an object out of a box/container with no explicit destination, Place target_object must be "table_center".
 - If putting an object into a box/bin/container, Place target_object must be "box" when present.
-- If taking/removing an object out of a box/container with no destination, Place target_object must be "table_center".
+- If putting one object on another object, Place target_object must be the support object's object_id.
 - Do not invent objects or locations. If required targets are missing, return an error.
 - place_mode="inside" or "on_table" means the executor uses that target base_pose directly.
+Example for "take orange cube out of box, and put yellow cube on salt box": {"plan":[{"order":"01","action":"Pick","target":"Orange_cube"},{"order":"02","action":"Place","target_object":"table_center"},{"order":"03","action":"Pick","target":"Yellow_cube"},{"order":"04","action":"Place","target_object":"salt_box"}]}.
 Return JSON only: {"plan":[{"order":"01","action":"Pick","target":"object_id"},{"order":"02","action":"Place","target_object":"object_id"}]}.
 If impossible, return JSON only: {"error":"reason"}.
 """
@@ -39,8 +42,9 @@ If impossible, return JSON only: {"error":"reason"}.
 
 CRITIC_SYSTEM_PROMPT = """Critique the proposed Pick/Place plan for a Franka Panda tabletop task.
 Use only facts explicitly present in scene_objects, the human instruction, and the planner action sequence. Do not infer hidden containers, occupancy, blockage, or spatial relations not stated there.
-Pass the plan if object_id targets exist, Pick occurs before Place, holding state is valid, and the plan satisfies the instruction.
-If putting into a box/container, Place target_object should be "box". If taking out of a box/container with no destination, Place target_object should be "table_center".
+Pass the plan if object_id targets exist, each Pick is followed by its intended Place, holding state is valid, and the plan satisfies every subtask in the instruction.
+For compound instructions, require one Pick/Place pair per moved object.
+If putting into a box/container, Place target_object should be "box". If taking out of a box/container with no destination, Place target_object should be "table_center". If putting one object on another object, Place target_object should be the support object's object_id.
 Return JSON only: {"pass":true,"feedback":"The plan is feasible."} or {"pass":false,"feedback":"specific correction"}.
 """
 
@@ -419,3 +423,4 @@ def parse_critic_response(text: str) -> dict[str, Any]:
     if not feedback:
         feedback = "The plan is feasible." if bool(data.get("pass", False)) else "No correction was provided."
     return {"pass": bool(data.get("pass", False)), "feedback": feedback}
+

@@ -134,21 +134,6 @@ class Ros1VlmPlannerNode:
                     scene_objects=scene_objects,
                 )
                 plan = result.plan
-                if not plan:
-                    return GenerateVlmPlanResponse(
-                        success=False,
-                        message=f"VLM planner stopped: {result.feedback}",
-                        plan_json="[]",
-                        detections_json=json.dumps(detections_to_jsonable(detections), ensure_ascii=False),
-                        grounded_json=json.dumps(
-                            {
-                                "scene_objects": scene_objects,
-                                "executor_steps": [],
-                                "error": result.feedback,
-                            },
-                            ensure_ascii=False,
-                        ),
-                    )
                 for record in result.history:
                     rospy.loginfo(
                         "[VLM_NODE] planner round %d plan=%s raw=%s",
@@ -163,10 +148,22 @@ class Ros1VlmPlannerNode:
                         record.critic_feedback,
                         record.critic_raw,
                     )
-                message = "VLM planner-critic plan generated" if result.success else (
-                    "VLM planner-critic reached max rounds; using last valid plan. "
-                    f"Last feedback: {result.feedback}"
-                )
+                if not result.success:
+                    return GenerateVlmPlanResponse(
+                        success=False,
+                        message=f"VLM planner stopped: {result.feedback}",
+                        plan_json=json.dumps(plan, ensure_ascii=False),
+                        detections_json=json.dumps(detections_to_jsonable(detections), ensure_ascii=False),
+                        grounded_json=json.dumps(
+                            {
+                                "scene_objects": scene_objects,
+                                "executor_steps": [],
+                                "error": result.feedback,
+                            },
+                            ensure_ascii=False,
+                        ),
+                    )
+                message = "VLM planner-critic plan generated"
             executor_steps = build_executor_steps(plan, scene_objects)
             rospy.loginfo("[VLM_NODE] final plan=%s", json.dumps(plan, ensure_ascii=False))
             rospy.loginfo("[VLM_NODE] executor_steps=%s", json.dumps(executor_steps, ensure_ascii=False))
@@ -213,3 +210,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
