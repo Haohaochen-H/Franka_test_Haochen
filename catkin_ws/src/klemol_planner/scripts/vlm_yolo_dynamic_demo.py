@@ -242,11 +242,18 @@ class RRTGroundedExecutor:
         approach_2.z += approach_height * 0.5
         approach_1 = copy.deepcopy(place)
         approach_1.z += approach_height
-        self._move_to_pose_sequence(goal=approach_1, post_goal_path=[approach_2, place])
+        allow_yaw_equivalence = str(target_id).strip().lower() != "box"
+        if not allow_yaw_equivalence:
+            rospy.loginfo("[VLM-YOLO] keeping fixed box place yaw without 180deg-equivalent adjustment")
+        self._move_to_pose_sequence(
+            goal=approach_1,
+            post_goal_path=[approach_2, place],
+            allow_yaw_equivalence=allow_yaw_equivalence,
+        )
         self.robot_model.open_gripper()
         retreat = copy.deepcopy(place)
         retreat.z += approach_height
-        self._move_to_pose_sequence(goal=retreat)
+        self._move_to_pose_sequence(goal=retreat, allow_yaw_equivalence=allow_yaw_equivalence)
 
     def _prefer_nearest_gripper_yaw(
         self,
@@ -280,10 +287,12 @@ class RRTGroundedExecutor:
         self,
         goal: PointWithOrientation,
         post_goal_path: Optional[list[PointWithOrientation]] = None,
+        allow_yaw_equivalence: bool = True,
     ) -> None:
         current_config = np.array(self.robot_model.get_current_joint_values())
         current_pose = self.robot_model.fk(config=current_config)
-        self._prefer_nearest_gripper_yaw(goal, post_goal_path, current_pose.yaw)
+        if allow_yaw_equivalence:
+            self._prefer_nearest_gripper_yaw(goal, post_goal_path, current_pose.yaw)
         pre_start_path = []
         if current_pose.z < 0.10:
             wp = copy.deepcopy(current_pose)
@@ -398,3 +407,4 @@ if __name__ == "__main__":
         main()
     except rospy.ROSInterruptException:
         pass
+

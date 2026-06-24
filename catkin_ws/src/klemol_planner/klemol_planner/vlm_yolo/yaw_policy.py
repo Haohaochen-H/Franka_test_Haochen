@@ -34,8 +34,8 @@ def target_yaw_from_detection(
 
     perpendicular_yaw = normalize_angle(raw_yaw - math.pi * 0.5)
     if name in CUBE_OBJECTS:
-        target_yaw = raw_yaw if abs(raw_yaw) <= abs(perpendicular_yaw) else perpendicular_yaw
-        return normalize_angle(target_yaw + gripper_yaw_offset)
+        candidates = [normalize_angle(raw_yaw + k * math.pi * 0.5 + gripper_yaw_offset) for k in range(-2, 3)]
+        return min(candidates, key=lambda yaw: abs(normalize_angle(yaw)))
 
     if name in LONG_OBJECTS:
         return normalize_angle(perpendicular_yaw + gripper_yaw_offset)
@@ -53,7 +53,7 @@ def yaw_policy_label(detection: "YoloDetection") -> str:
     if name in ROUND_OBJECTS:
         return "round_fixed_0_plus_offset"
     if name in CUBE_OBJECTS:
-        return "cube_min_abs(raw,raw_minus_90deg)_plus_offset"
+        return "cube_90deg_equivalent_nearest_zero_after_offset"
     if name in LONG_OBJECTS:
         return "long_raw_minus_90deg_plus_offset"
     return "default_raw_minus_90deg_plus_offset"
