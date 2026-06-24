@@ -22,7 +22,7 @@ enable_generated_ros_modules(PACKAGE_ROOT)
 from klemol_planner.camera_utils.camera_operations import CameraOperations
 from klemol_planner.environment.environment_transformations import PandaTransformations
 from klemol_planner.srv import GenerateVlmPlan, GenerateVlmPlanResponse
-from klemol_planner.vlm_yolo.box_corner import DEFAULT_BOX_BASE_X, DEFAULT_BOX_BASE_Y, build_fixed_box_scene_object
+from klemol_planner.vlm_yolo.box_corner import DEFAULT_BOX_BASE_X, DEFAULT_BOX_BASE_Y, DEFAULT_BOX_TABLE_Z, build_fixed_box_scene_object
 from klemol_planner.vlm_yolo.scene_context import build_executor_steps, build_scene_objects, detections_to_jsonable
 from klemol_planner.vlm_yolo.vlm_module import VlmPlanner
 from klemol_planner.vlm_yolo.yolo_module import YoloObjectDetector
@@ -53,7 +53,7 @@ class Ros1VlmPlannerNode:
         self.box_enabled = bool(rospy.get_param("~box_enabled", True))
         self.box_x = float(rospy.get_param("~box_x", DEFAULT_BOX_BASE_X))
         self.box_y = float(rospy.get_param("~box_y", DEFAULT_BOX_BASE_Y))
-        self.box_table_z = float(rospy.get_param("~box_table_z", 0.0))
+        self.box_table_z = float(rospy.get_param("~box_table_z", DEFAULT_BOX_TABLE_Z))
 
         rospy.loginfo("[VLM_NODE] loading camera, YOLO, and VLM clients")
         self.camera_operations = CameraOperations()
@@ -98,10 +98,12 @@ class Ros1VlmPlannerNode:
         try:
             color_image, depth_frame = self.camera_operations.get_image()
             intrinsics = getattr(self.camera_operations, "color_intrinsics", None)
+            detector_depth_frame = None if self.xy_source == "pixel" else depth_frame
+            detector_intrinsics = None if self.xy_source == "pixel" else intrinsics
             detections = self.detector.detect(
                 color_image=color_image,
-                depth_frame=depth_frame,
-                intrinsics=intrinsics,
+                depth_frame=detector_depth_frame,
+                intrinsics=detector_intrinsics,
             )
             rospy.loginfo("[VLM_NODE] detections: %s", ", ".join(det.object_id for det in detections) or "none")
             scene_objects = build_scene_objects(

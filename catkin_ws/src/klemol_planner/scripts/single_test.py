@@ -21,6 +21,7 @@ from klemol_planner.goals.point_with_orientation import PointWithOrientation
 from klemol_planner.vlm_yolo.box_corner import (
     DEFAULT_BOX_BASE_X,
     DEFAULT_BOX_BASE_Y,
+    DEFAULT_BOX_TABLE_Z,
     DEFAULT_TOP_DOWN_PITCH,
     DEFAULT_TOP_DOWN_ROLL,
     DEFAULT_TOP_DOWN_YAW,
@@ -96,7 +97,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--xy-source",
-        default="transform",
+        default="pixel",
         choices=["transform", "pixel"],
         help="Use camera->base transform or fixed pixel->base XY homography for object XY.",
     )
@@ -119,7 +120,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--box-id", type=int, default=None, help="Optional ArUco ID for the box marker when --box-detect is used.")
     parser.add_argument("--box-table-ids", default="0,1,2,3", help="Comma-separated ArUco IDs for table corner markers when --box-detect is used.")
     parser.add_argument("--box-marker-point", default="center", choices=["center", "tl", "tr", "br", "bl"], help="Box marker point to convert to base XY when --box-detect is used.")
-    parser.add_argument("--box-table-z", type=float, default=0.0, help="Box target Z above table plane; base z adds TABLE_Z_BASE_OFFSET.")
+    parser.add_argument("--box-table-z", type=float, default=DEFAULT_BOX_TABLE_Z, help="Box target Z above table plane; base z adds TABLE_Z_BASE_OFFSET.")
     return parser.parse_args()
 
 
@@ -318,7 +319,9 @@ def main() -> None:
         return
 
     detector = YoloObjectDetector(weights_path=args.weights, confidence_threshold=args.conf)
-    detections = detector.detect(color_image=color_image, depth_frame=depth_frame, intrinsics=intrinsics)
+    detector_depth_frame = None if args.xy_source == "pixel" else depth_frame
+    detector_intrinsics = None if args.xy_source == "pixel" else intrinsics
+    detections = detector.detect(color_image=color_image, depth_frame=detector_depth_frame, intrinsics=detector_intrinsics)
     print_detections(detections)
 
     selected = choose_detection(detections, args.class_name)
@@ -333,7 +336,20 @@ def main() -> None:
     gripper_yaw_offset = float(np.deg2rad(args.gripper_yaw_offset_deg))
     pick_table_z = table_z_for_object(selected.class_name, selected.object_id, override_table_z=args.table_z)
     place_table_z = args.table_z if args.table_z is not None else place_z_for_object(selected.class_name, selected.object_id)
-    object_point_base = detection_to_base_point(selected, panda_transformations, gripper_yaw_offset)
+    if args.xy_source == "pixel" and pick_table_z is not None:
+        if selected.center_pixel is None:
+            raise RuntimeError("Selected object has no center pixel for pixel XY transform.")
+        object_x, object_y = pixel_to_base_xy(selected.center_pixel)
+        object_point_base = PointWithOrientation(
+            x=object_x,
+            y=object_y,
+            z=target_z_from_table_height(pick_table_z),
+            roll=DEFAULT_TOP_DOWN_ROLL,
+            pitch=DEFAULT_TOP_DOWN_PITCH,
+            yaw=target_yaw_from_detection(selected, gripper_yaw_offset=gripper_yaw_offset),
+        )
+    else:
+        object_point_base = detection_to_base_point(selected, panda_transformations, gripper_yaw_offset)
     object_point_base = apply_planar_overrides(
         object_point_base,
         detection=selected,

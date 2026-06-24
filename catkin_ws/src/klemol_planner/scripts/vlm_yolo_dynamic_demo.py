@@ -26,6 +26,7 @@ from klemol_planner.utils.config_loader import load_planner_params
 from klemol_planner.vlm_yolo.box_corner import (
     DEFAULT_BOX_BASE_X,
     DEFAULT_BOX_BASE_Y,
+    DEFAULT_BOX_TABLE_Z,
     build_box_scene_object,
     build_fixed_box_scene_object,
     parse_id_list,
@@ -93,7 +94,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--box-id", type=int, default=None, help="Optional ArUco ID for the box marker when --box-detect is used.")
     parser.add_argument("--box-table-ids", default="0,1,2,3", help="Comma-separated ArUco IDs for table corner markers when --box-detect is used.")
     parser.add_argument("--box-marker-point", default="center", choices=["center", "tl", "tr", "br", "bl"], help="Box marker point to convert to base XY when --box-detect is used.")
-    parser.add_argument("--box-table-z", type=float, default=0.0, help="Box target Z above table plane.")
+    parser.add_argument("--box-table-z", type=float, default=DEFAULT_BOX_TABLE_Z, help="Box target Z above table plane.")
     return parser.parse_args()
 
 
@@ -319,7 +320,9 @@ def main() -> None:
     color_image, depth_frame = camera_operations.get_image()
     intrinsics = getattr(camera_operations, "color_intrinsics", None)
     detector = YoloObjectDetector(weights_path=args.weights, confidence_threshold=args.conf)
-    detections = detector.detect(color_image=color_image, depth_frame=depth_frame, intrinsics=intrinsics)
+    detector_depth_frame = None if args.xy_source == "pixel" else depth_frame
+    detector_intrinsics = None if args.xy_source == "pixel" else intrinsics
+    detections = detector.detect(color_image=color_image, depth_frame=detector_depth_frame, intrinsics=detector_intrinsics)
     print_detections(detections)
     if not detections:
         raise RuntimeError("No YOLO detections available for VLM planning.")

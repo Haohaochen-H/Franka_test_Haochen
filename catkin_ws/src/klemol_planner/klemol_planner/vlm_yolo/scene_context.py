@@ -32,7 +32,6 @@ def build_scene_objects(
 ) -> list[dict[str, Any]]:
     scene_objects = []
     for detection in detections:
-        base_pose = detection_to_base_pose(detection, panda_transformations, gripper_yaw_offset)
         object_table_z = table_z_for_object(
             class_name=detection.class_name,
             object_id=detection.object_id,
@@ -42,12 +41,28 @@ def build_scene_objects(
             class_name=detection.class_name,
             object_id=detection.object_id,
         )
-        if xy_source == "pixel":
+        if xy_source == "pixel" and object_table_z is not None:
             if detection.center_pixel is None:
                 raise ValueError(f"Detection {detection.object_id} has no center pixel.")
-            base_pose.x, base_pose.y = pixel_to_base_xy(detection.center_pixel)
-        if object_table_z is not None:
-            base_pose.z = target_z_from_table_height(object_table_z)
+            base_x, base_y = pixel_to_base_xy(detection.center_pixel)
+            base_pose = PointWithOrientation(
+                x=base_x,
+                y=base_y,
+                z=target_z_from_table_height(object_table_z),
+                roll=DEFAULT_TOP_DOWN_ROLL,
+                pitch=DEFAULT_TOP_DOWN_PITCH,
+                yaw=target_yaw_from_detection(detection, gripper_yaw_offset=gripper_yaw_offset),
+            )
+        else:
+            if detection.position_camera is None:
+                continue
+            base_pose = detection_to_base_pose(detection, panda_transformations, gripper_yaw_offset)
+            if xy_source == "pixel":
+                if detection.center_pixel is None:
+                    raise ValueError(f"Detection {detection.object_id} has no center pixel.")
+                base_pose.x, base_pose.y = pixel_to_base_xy(detection.center_pixel)
+            if object_table_z is not None:
+                base_pose.z = target_z_from_table_height(object_table_z)
 
         grasp_pose = copy_pose(base_pose)
         grasp_pose.z += grasp_height_offset
