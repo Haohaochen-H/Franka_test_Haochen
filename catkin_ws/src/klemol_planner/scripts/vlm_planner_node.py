@@ -151,16 +151,25 @@ class Ros1VlmPlannerNode:
                     )
                 for record in result.history:
                     rospy.loginfo(
-                        "[VLM_NODE] critic round %d pass=%s feedback=%s",
+                        "[VLM_NODE] planner round %d plan=%s raw=%s",
+                        record.iteration,
+                        json.dumps(record.plan, ensure_ascii=False),
+                        record.planner_raw,
+                    )
+                    rospy.loginfo(
+                        "[VLM_NODE] critic round %d pass=%s feedback=%s raw=%s",
                         record.iteration,
                         record.critic_pass,
                         record.critic_feedback,
+                        record.critic_raw,
                     )
                 message = "VLM planner-critic plan generated" if result.success else (
                     "VLM planner-critic reached max rounds; using last valid plan. "
                     f"Last feedback: {result.feedback}"
                 )
             executor_steps = build_executor_steps(plan, scene_objects)
+            rospy.loginfo("[VLM_NODE] final plan=%s", json.dumps(plan, ensure_ascii=False))
+            rospy.loginfo("[VLM_NODE] executor_steps=%s", json.dumps(executor_steps, ensure_ascii=False))
 
             return GenerateVlmPlanResponse(
                 success=True,

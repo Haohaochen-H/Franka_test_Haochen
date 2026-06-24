@@ -38,7 +38,8 @@ If impossible, return JSON only: {"error":"reason"}.
 
 
 CRITIC_SYSTEM_PROMPT = """Critique the proposed Pick/Place plan for a Franka Panda tabletop task.
-Check: valid object_id targets from scene_objects, Pick before Place, no Pick while holding, no Place while empty, and task satisfaction.
+Use only facts explicitly present in scene_objects, the human instruction, and the planner action sequence. Do not infer hidden containers, occupancy, blockage, or spatial relations not stated there.
+Pass the plan if object_id targets exist, Pick occurs before Place, holding state is valid, and the plan satisfies the instruction.
 If putting into a box/container, Place target_object should be "box". If taking out of a box/container with no destination, Place target_object should be "table_center".
 Return JSON only: {"pass":true,"feedback":"The plan is feasible."} or {"pass":false,"feedback":"specific correction"}.
 """
