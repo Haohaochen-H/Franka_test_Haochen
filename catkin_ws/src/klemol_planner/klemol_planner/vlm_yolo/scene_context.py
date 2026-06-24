@@ -207,7 +207,10 @@ def build_executor_steps(plan: list[dict[str, Any]], scene_objects: list[dict[st
         elif action == "place":
             target = scene_by_name[normalize_name(step["target_object"])]
             target_point = dict(target["base_pose"])
-            stacking_height_offset = 0.0 if target.get("place_mode") in {"inside", "on_table", "location"} else held_object_height
+            if target.get("place_mode") == "inside":
+                stacking_height_offset = 0.0
+            else:
+                stacking_height_offset = held_object_height
             target_point["z"] = round_float(float(target_point["z"]) + stacking_height_offset + EXECUTOR_Z_SAFETY_LIFT)
             steps.append(
                 {
@@ -228,6 +231,9 @@ def build_executor_steps(plan: list[dict[str, Any]], scene_objects: list[dict[st
     return steps
 
 
+
 def normalize_name(name: str) -> str:
     return str(name).strip().lower().replace(" ", "_").replace("-", "_")
+
+
 
