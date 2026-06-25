@@ -63,8 +63,6 @@ def main() -> None:
     print(f"message: {response.message}")
     print("plan_json:")
     print(pretty_json(response.plan_json))
-    print("detections_json:")
-    print(pretty_json(response.detections_json))
     print("grounded_json:")
     print(pretty_json(response.grounded_json))
 
@@ -91,3 +89,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
