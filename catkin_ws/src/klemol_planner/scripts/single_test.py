@@ -212,6 +212,7 @@ def write_debug_image(
     selected: YoloDetection,
     output_path: str,
     show_image: bool,
+    log_prefix: str = "[SINGLE_TEST]",
 ) -> None:
     if not output_path and not show_image:
         return
@@ -241,7 +242,7 @@ def write_debug_image(
             output = Path(output_path).expanduser()
         output.parent.mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(output), image)
-        print(f"[SINGLE_TEST] debug_image={output}")
+        print(f"{log_prefix} debug_image={output}")
 
     if show_image:
         cv2.imshow("single_test YOLO debug", image)
@@ -418,3 +419,4 @@ if __name__ == "__main__":
         main()
     except rospy.ROSInterruptException:
         pass
+

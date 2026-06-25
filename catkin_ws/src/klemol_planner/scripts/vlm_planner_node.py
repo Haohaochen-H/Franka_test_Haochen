@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 import sys
 
+import cv2
 import rospy
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
@@ -26,7 +28,7 @@ from klemol_planner.vlm_yolo.box_corner import DEFAULT_BOX_BASE_X, DEFAULT_BOX_B
 from klemol_planner.vlm_yolo.scene_context import build_executor_steps, build_scene_objects, detections_to_jsonable
 from klemol_planner.vlm_yolo.vlm_module import VlmPlanner
 from klemol_planner.vlm_yolo.yolo_module import YoloObjectDetector
-from single_test import default_weights_path
+from single_test import default_weights_path, write_debug_image
 
 
 class Ros1VlmPlannerNode:
@@ -49,6 +51,7 @@ class Ros1VlmPlannerNode:
         self.table_z = None if table_z_param in ("", None) else float(table_z_param)
         self.approach_height = float(rospy.get_param("~approach_height", 0.20))
         self.grasp_height_offset = float(rospy.get_param("~grasp_height_offset", 0.0))
+        self.debug_image = rospy.get_param("~debug_image", "auto")
         self.demo_mode = bool(rospy.get_param("~demo_mode", False))
         self.box_enabled = bool(rospy.get_param("~box_enabled", True))
         self.box_x = float(rospy.get_param("~box_x", DEFAULT_BOX_BASE_X))
@@ -106,6 +109,7 @@ class Ros1VlmPlannerNode:
                 intrinsics=detector_intrinsics,
             )
             rospy.loginfo("[VLM_NODE] detections: %s", ", ".join(det.object_id for det in detections) or "none")
+            self._write_debug_image(color_image=color_image, depth_frame=depth_frame, detections=detections)
             scene_objects = build_scene_objects(
                 detections=detections,
                 panda_transformations=self.transformer,
@@ -191,6 +195,31 @@ class Ros1VlmPlannerNode:
                 grounded_json="[]",
             )
 
+    def _write_debug_image(self, color_image, depth_frame, detections) -> None:
+        if not self.debug_image:
+            return
+        if detections:
+            selected = max(detections, key=lambda det: det.confidence)
+            write_debug_image(
+                color_image=color_image,
+                depth_frame=depth_frame,
+                detections=detections,
+                selected=selected,
+                output_path=self.debug_image,
+                show_image=False,
+                log_prefix="[VLM_NODE]",
+            )
+            return
+
+        if self.debug_image == "auto":
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            output = PACKAGE_ROOT / "debug_images" / f"vlm_plan_yolo_debug_{timestamp}.png"
+        else:
+            output = Path(str(self.debug_image)).expanduser()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(output), color_image)
+        rospy.loginfo("[VLM_NODE] debug_image=%s", output)
+
     def _demo_plan(self, scene_objects):
         if len(scene_objects) < 2:
             raise RuntimeError("demo_mode needs at least two detected objects")
@@ -210,4 +239,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
