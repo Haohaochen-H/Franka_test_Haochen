@@ -179,11 +179,16 @@ def detections_to_jsonable(detections: list[YoloDetection]) -> list[dict[str, An
 
 def build_executor_steps(plan: list[dict[str, Any]], scene_objects: list[dict[str, Any]]) -> list[dict[str, Any]]:
     scene_by_name = {}
+    object_by_id = {}
     for scene_object in scene_objects:
-        scene_by_name[normalize_name(scene_object["object_id"])] = scene_object
-        scene_by_name[normalize_name(scene_object["class_name"])] = scene_object
+        scene_copy = dict(scene_object)
+        scene_copy["base_pose"] = dict(scene_copy["base_pose"])
+        object_by_id[scene_copy["object_id"]] = scene_copy
+        scene_by_name[normalize_name(scene_copy["object_id"])] = scene_copy
+        scene_by_name[normalize_name(scene_copy["class_name"])] = scene_copy
 
     held_object_id = ""
+    held_object_ref = None
     held_object_point = None
     held_object_height = 0.0
     steps = []
@@ -192,6 +197,7 @@ def build_executor_steps(plan: list[dict[str, Any]], scene_objects: list[dict[st
         if action == "pick":
             source = scene_by_name[normalize_name(step["target"])]
             held_object_id = source["object_id"]
+            held_object_ref = source
             held_object_point = dict(source["base_pose"])
             held_object_point["z"] = round_float(float(held_object_point["z"]) + EXECUTOR_Z_SAFETY_LIFT)
             held_object_height = float(source.get("object_height") or 0.0)
@@ -205,13 +211,16 @@ def build_executor_steps(plan: list[dict[str, Any]], scene_objects: list[dict[st
                 }
             )
         elif action == "place":
+            if held_object_ref is None:
+                raise ValueError(f"Place step has no held object: {step}")
             target = scene_by_name[normalize_name(step["target_object"])]
             target_point = dict(target["base_pose"])
             if target.get("place_mode") == "inside":
                 stacking_height_offset = 0.0
             else:
                 stacking_height_offset = held_object_height
-            target_point["z"] = round_float(float(target_point["z"]) + stacking_height_offset + EXECUTOR_Z_SAFETY_LIFT)
+            support_z = float(target_point["z"]) + stacking_height_offset
+            target_point["z"] = round_float(support_z + EXECUTOR_Z_SAFETY_LIFT)
             steps.append(
                 {
                     "skill": "place",
@@ -223,7 +232,17 @@ def build_executor_steps(plan: list[dict[str, Any]], scene_objects: list[dict[st
                     "place_mode": target.get("place_mode", "on_top"),
                 }
             )
+
+            updated_pose = dict(target_point)
+            updated_pose["z"] = round_float(support_z)
+            held_object_ref["base_pose"] = updated_pose
+            for alias in (held_object_ref.get("object_id"), held_object_ref.get("class_name")):
+                if alias:
+                    scene_by_name[normalize_name(alias)] = held_object_ref
+            object_by_id[held_object_id] = held_object_ref
+
             held_object_id = ""
+            held_object_ref = None
             held_object_point = None
             held_object_height = 0.0
         else:

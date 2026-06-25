@@ -32,6 +32,7 @@ Rules:
 - If taking/removing an object out of a box/container with no explicit destination, Place target_object must be "table_center".
 - If putting an object into a box/bin/container, Place target_object must be "box" when present.
 - If putting one object on another object, Place target_object must be the support object's object_id.
+- For progressive stacking tasks, later targets can refer to objects moved earlier. Example: "put orange cube on the salt box, and put yellow cube on the orange cube" means Pick Orange_cube, Place salt_box, then Pick Yellow_cube, Place Orange_cube, forming one stack on the salt box.
 - Do not invent objects or locations. If required targets are missing, return an error.
 - place_mode="inside" or "on_table" means the executor uses that target base_pose directly.
 Example for "take orange cube out of box, and put yellow cube on salt box": {"plan":[{"order":"01","action":"Pick","target":"Orange_cube"},{"order":"02","action":"Place","target_object":"table_center"},{"order":"03","action":"Pick","target":"Yellow_cube"},{"order":"04","action":"Place","target_object":"salt_box"}]}.
@@ -46,6 +47,7 @@ Pass the plan if object_id targets exist, each Pick is followed by its intended 
 For compound instructions, require one Pick/Place pair per moved object.
 The action schema has no source field. For "take object out of box", Pick target="object" is correct; the following Place target_object must be "table_center" unless another destination is specified.
 If putting into a box/container, Place target_object should be "box". If taking out of a box/container with no destination, Place target_object should be "table_center". If putting one object on another object, Place target_object should be the support object's object_id.
+For progressive stacking, accept plans where a later Place target_object is an object that was moved earlier; the executor will use the updated location, not the original camera location.
 Return JSON only: {"pass":true,"feedback":"The plan is feasible."} or {"pass":false,"feedback":"specific correction"}.
 """
 
