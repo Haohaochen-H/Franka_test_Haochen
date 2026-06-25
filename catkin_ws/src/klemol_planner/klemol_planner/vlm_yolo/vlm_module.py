@@ -136,9 +136,13 @@ class VlmPlanner:
             critic_prompt = self._build_critic_prompt(instruction, detections, scene_objects, plan_json)
             critic_raw = self._ollama_generate(critic_prompt, model_name=self.critic_model_name, images=images)
             critic = parse_critic_response(critic_raw)
+            critic_pass = bool(critic["pass"])
             feedback = critic["feedback"]
-            history.append(CriticRecord(iteration, planner_raw, plan, critic_raw, critic["pass"], feedback))
-            if critic["pass"]:
+            if not critic_pass and is_dynamic_stacking_false_negative(instruction, plan, scene_objects, feedback):
+                critic_pass = True
+                feedback = "Accepted by deterministic dynamic-stacking check; critic used initial base_pose instead of updated execution state."
+            history.append(CriticRecord(iteration, planner_raw, plan, critic_raw, critic_pass, feedback))
+            if critic_pass:
                 return VlmPlannerResult(plan=plan, success=True, feedback=feedback, history=history)
 
         return VlmPlannerResult(plan=last_valid_plan, success=False, feedback=feedback, history=history)
@@ -353,6 +357,78 @@ def repair_take_out_of_box_plan(
 
 def normalize_identifier(value: Any) -> str:
     return str(value).strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def is_dynamic_stacking_false_negative(
+    instruction: str,
+    plan: list[dict[str, Any]],
+    scene_objects: list[dict[str, Any]],
+    feedback: str,
+) -> bool:
+    feedback_text = feedback.lower()
+    if not any(marker in feedback_text for marker in ("base_pose", "not on top", "not on", "original")):
+        return False
+    requested_pairs = extract_put_on_pairs(instruction, scene_objects)
+    if not requested_pairs:
+        return False
+    plan_pairs = pick_place_pairs(plan)
+    if len(plan_pairs) < len(requested_pairs):
+        return False
+    return all(plan_pair == requested_pair for plan_pair, requested_pair in zip(plan_pairs, requested_pairs))
+
+
+def extract_put_on_pairs(instruction: str, scene_objects: list[dict[str, Any]]) -> list[tuple[str, str]]:
+    object_aliases = build_object_aliases(scene_objects)
+    pairs = []
+    pattern = re.compile(r"\bput\s+(.+?)\s+on\s+(.+?)(?=(?:,\s*)?(?:and\s+)?put\s+|$)", re.IGNORECASE)
+    for match in pattern.finditer(instruction):
+        source = phrase_to_object_id(match.group(1), object_aliases)
+        target = phrase_to_object_id(match.group(2), object_aliases)
+        if source and target:
+            pairs.append((source, target))
+    return pairs
+
+
+def build_object_aliases(scene_objects: list[dict[str, Any]]) -> dict[str, str]:
+    aliases = {}
+    for obj in scene_objects:
+        object_id = str(obj.get("object_id", "")).strip()
+        if not object_id:
+            continue
+        normalized_id = normalize_identifier(object_id)
+        aliases[normalized_id] = normalized_id
+        aliases[normalized_id.replace("_", " ")] = normalized_id
+        class_name = str(obj.get("class_name", "")).strip()
+        if class_name:
+            normalized_class = normalize_identifier(class_name)
+            aliases[normalized_class] = normalized_id
+            aliases[normalized_class.replace("_", " ")] = normalized_id
+    return aliases
+
+
+def phrase_to_object_id(phrase: str, aliases: dict[str, str]) -> str:
+    normalized_phrase = normalize_identifier(re.sub(r"\b(the|a|an)\b", " ", phrase.lower()))
+    phrase_words = normalized_phrase.replace("_", " ")
+    candidates = sorted(aliases.items(), key=lambda item: len(item[0]), reverse=True)
+    for alias, object_id in candidates:
+        alias_words = alias.replace("_", " ")
+        if alias_words and alias_words in phrase_words:
+            return object_id
+    return ""
+
+
+def pick_place_pairs(plan: list[dict[str, Any]]) -> list[tuple[str, str]]:
+    pairs = []
+    held = ""
+    for step in plan:
+        action = str(step.get("action", "")).strip().lower()
+        if action == "pick":
+            held = normalize_identifier(step.get("target", ""))
+        elif action == "place" and held:
+            pairs.append((held, normalize_identifier(step.get("target_object", ""))))
+            held = ""
+    return pairs
+
 
 def normalize_plan(
     data: Any,
