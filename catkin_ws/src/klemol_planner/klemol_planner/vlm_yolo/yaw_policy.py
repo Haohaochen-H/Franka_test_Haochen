@@ -9,6 +9,7 @@ if TYPE_CHECKING:
 
 ROUND_OBJECTS = {"tomato_soup_can"}
 LONG_OBJECTS = {"salt_box", "cleaner_bottle"}
+SALT_BOX_OBJECTS = {"salt_box"}
 CUBE_OBJECTS = {"orange_cube", "yellow_cube"}
 DEFAULT_GRIPPER_YAW_OFFSET_DEG = -45.0
 
@@ -37,6 +38,9 @@ def target_yaw_from_detection(
         candidates = [normalize_angle(raw_yaw + k * math.pi * 0.5 + gripper_yaw_offset) for k in range(-2, 3)]
         return min(candidates, key=lambda yaw: abs(normalize_angle(yaw)))
 
+    if name in SALT_BOX_OBJECTS:
+        return normalize_angle(raw_yaw + gripper_yaw_offset)
+
     if name in LONG_OBJECTS:
         return normalize_angle(perpendicular_yaw + gripper_yaw_offset)
 
@@ -54,6 +58,8 @@ def yaw_policy_label(detection: "YoloDetection") -> str:
         return "round_fixed_0_plus_offset"
     if name in CUBE_OBJECTS:
         return "cube_90deg_equivalent_nearest_zero_after_offset"
+    if name in SALT_BOX_OBJECTS:
+        return "salt_box_raw_plus_offset"
     if name in LONG_OBJECTS:
         return "long_raw_minus_90deg_plus_offset"
     return "default_raw_minus_90deg_plus_offset"
