@@ -39,7 +39,7 @@ def target_yaw_from_detection(
         return min(candidates, key=lambda yaw: abs(normalize_angle(yaw)))
 
     if name in SALT_BOX_OBJECTS:
-        return normalize_angle(raw_yaw + math.pi * 0.5 + gripper_yaw_offset)
+        return normalize_angle(perpendicular_yaw + gripper_yaw_offset)
 
     if name in LONG_OBJECTS:
         return normalize_angle(perpendicular_yaw + gripper_yaw_offset)
@@ -59,7 +59,7 @@ def yaw_policy_label(detection: "YoloDetection") -> str:
     if name in CUBE_OBJECTS:
         return "cube_90deg_equivalent_nearest_zero_after_offset"
     if name in SALT_BOX_OBJECTS:
-        return "salt_box_raw_plus_90deg_plus_offset"
+        return "salt_box_raw_minus_90deg_plus_offset"
     if name in LONG_OBJECTS:
         return "long_raw_minus_90deg_plus_offset"
     return "default_raw_minus_90deg_plus_offset"
