@@ -20,6 +20,8 @@ from klemol_planner.vlm_yolo.yolo_module import YoloDetection
 TABLE_CENTER_BASE_X = 0.3900
 TABLE_CENTER_BASE_Y = -0.0048
 EXECUTOR_Z_SAFETY_LIFT = 0.01
+BOX_PLACE_INITIAL_TOWARD_ROBOT_X_OFFSET = 0.045
+BOX_PLACE_STEP_TOWARD_ROBOT_X_OFFSET = 0.025
 
 
 def build_scene_objects(
@@ -191,6 +193,7 @@ def build_executor_steps(plan: list[dict[str, Any]], scene_objects: list[dict[st
     held_object_ref = None
     held_object_point = None
     held_object_height = 0.0
+    box_place_count = 0
     steps = []
     for step in plan:
         action = str(step.get("action", "")).strip().lower()
@@ -217,6 +220,12 @@ def build_executor_steps(plan: list[dict[str, Any]], scene_objects: list[dict[st
             target_point = dict(target["base_pose"])
             if target.get("place_mode") == "inside":
                 stacking_height_offset = 0.0
+                if normalize_name(target.get("object_id", "")) == "box":
+                    box_x_offset = BOX_PLACE_INITIAL_TOWARD_ROBOT_X_OFFSET + (
+                        box_place_count * BOX_PLACE_STEP_TOWARD_ROBOT_X_OFFSET
+                    )
+                    target_point["x"] = round_float(float(target_point["x"]) + box_x_offset)
+                    box_place_count += 1
             else:
                 stacking_height_offset = held_object_height
             support_z = float(target_point["z"]) + stacking_height_offset
