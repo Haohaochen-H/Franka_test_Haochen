@@ -6,7 +6,7 @@ DEFAULT_TABLE_Z_BY_OBJECT = {
     "salt_box": 0.03,
     "cleaner_bottle": 0.03,
     "tennis": 0.03,
-    "tomato_can": 0.095,
+    "tomato_can": 0.055,
 }
 
 DEFAULT_OBJECT_HEIGHT_BY_OBJECT = {
@@ -15,14 +15,14 @@ DEFAULT_OBJECT_HEIGHT_BY_OBJECT = {
     "salt_box": 0.055,
     "cleaner_bottle": 0.05,
     "tennis": 0.05,
-    "tomato_can": 0.13,
+    "tomato_can": 0.075,
 }
 
 DEFAULT_PLACE_Z_BY_OBJECT = {
     "salt_box": 0.055,
     "cleaner_bottle": 0.05,
     "tennis": 0.05,
-    "tomato_can": 0.13,
+    "tomato_can": 0.075,
 }
 
 
