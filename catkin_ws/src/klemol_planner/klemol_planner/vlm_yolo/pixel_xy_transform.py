@@ -7,14 +7,14 @@ import numpy as np
 
 # Homography from color-image pixel coordinates [u, v, 1] to robot base XY [x, y].
 # Fitted from the four table ArUco corner correspondences:
-# corner_0/id=0: pixel (108, 400) -> base (0.687, -0.385)
-# corner_1/id=1: pixel (469, 392) -> base (0.674,  0.366)
-# corner_2/id=2: pixel (491, 117) -> base (0.100,  0.412)
-# corner_3/id=3: pixel ( 92, 112) -> base (0.099, -0.412)
+# corner_0/id=0: pixel (123.00, 409.75) -> base (0.687, -0.385)
+# corner_1/id=1: pixel (484.25, 389.00) -> base (0.674,  0.366)
+# corner_2/id=2: pixel (495.50, 112.75) -> base (0.100,  0.412)
+# corner_3/id=3: pixel ( 97.50, 123.00) -> base (0.099, -0.412)
 PIXEL_TO_BASE_XY_H = np.array([
-    [-2.82884029e-05,  2.00639907e-03, -1.23916948e-01],
-    [ 2.02531711e-03, -8.16084924e-06, -5.94074276e-01],
-    [-5.59839916e-05, -2.64144047e-05,  1.00000000e+00],
+    [5.00850041e-05, 2.02520256e-03, -1.55542296e-01],
+    [2.03771044e-03, -8.23533669e-05, -5.98220571e-01],
+    [-4.59442508e-05, -9.49467895e-06, 1.00000000e+00],
 ], dtype=float)
 
 
